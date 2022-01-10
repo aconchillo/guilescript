@@ -1,0 +1,202 @@
+
+* What is GuileScript?
+
+GuileScript is currently a toy compiler that aims to compile [[https://www.gnu.org/software/guile/][Guile]] to
+JavaScript. It currently doesn't do much, but it might in the future.
+
+* Why?
+
+Because, why not? [[https://www.gnu.org/software/guile/][Guile]] is actually a lot of fun and I just got jealous that
+people could do these sort of [[https://twitter.com/zaneshelby/status/1477988369154121734?s=20][cool things with ClojureScript]] and I couldn't with
+Guile. Of course, I still can't but wishful thinking is a good thing after all.
+
+* How does it work?
+
+GuileScript leverages [[https://www.gnu.org/software/guile/manual/html_node/Compiler-Tower.html][Guile's Compiler Tower]]. It compiles Guile code into
+[[https://www.gnu.org/software/guile/manual/html_node/Tree_002dIL.html][Tree-IL]] and then compiles Tree-IL into JavaScript.
+
+Tree-IL is the first intermediate language (the main one actually being [[https://www.gnu.org/software/guile/manual/html_node/Continuation_002dPassing-Style.html][CPS]])
+that Guile code is actually converted to, so the only thing that I needed to do
+is figure out how Tree-IL works plus get some inspiration from [[https://github.com/clojure/clojurescript/blob/v0.0/src/clj/clojure/cljs.clj][ClojureScript
+first commit]].
+
+* How do I try it out?
+
+Clone the repository and run:
+
+#+BEGIN_EXAMPLE
+$ autoreconf -vif
+$ ./configure
+$ make
+$ sudo make install
+#+END_EXAMPLE
+
+If you are on macOS you can actually install GuileScript through [[https://github.com/aconchillo/homebrew-guile][Guile Homebrew]]:
+
+#+BEGIN_EXAMPLE
+$ brew install guilescript
+#+END_EXAMPLE
+
+If everything builds and installs fine you can try to compile one of the
+provided examples (e.g. =examples/fib.gs=):
+
+#+BEGIN_SRC scheme
+(define (fib n)
+  (if (<= n 1)
+      1
+      (+ (fib (- n 2)) (fib (- n 1)))))
+#+END_SRC
+
+#+BEGIN_EXAMPLE
+$ guilescript examples/fib.gs
+#+END_EXAMPLE
+
+which in this case would generate something like:
+
+#+BEGIN_SRC javascript
+var fib = function fib(n) {
+  return ((n<=1) ? 1 : (fib((n-2))+fib((n-1))));
+}
+#+END_SRC javascript
+
+* What's missing?
+
+Too many things, but just to name a few:
+
+- More types: maps, sets...
+
+- More vector and string functions.
+
+- Support formatting in logging functions.
+
+- Integration with Google's [[https://developers.google.com/closure/compiler][Closure Compiler]].
+
+And even long term:
+
+- Modules.
+
+- NodeJS integration.
+
+* What's supported?
+
+** Types
+
+| GuileScript | JavaScript |
+|-------------+------------|
+| #nil        | null       |
+|-------------+------------|
+| "guile"     | "guile"    |
+|-------------+------------|
+| 'script     | "script"   |
+|-------------+------------|
+| #t          | true       |
+|-------------+------------|
+| #f          | false      |
+|-------------+------------|
+| 234         | 234        |
+|-------------+------------|
+| 0.5         | 0.5        |
+|-------------+------------|
+| 1/2         | 0.5        |
+|-------------+------------|
+| #(1 2 3)    | [1,2,3]    |
+|-------------+------------|
+
+** Strings
+
+| GuileScript         | JavaScript |
+|---------------------+------------|
+| (string-length s)   | s.length   |
+|---------------------+------------|
+| (string-ref s i)    | s[i]       |
+|---------------------+------------|
+
+** Vectors
+
+| GuileScript         | JavaScript |
+|---------------------+------------|
+| (vector-length v)   | v.length   |
+|---------------------+------------|
+| (vector-ref v i)    | v[i]       |
+|---------------------+------------|
+| (vector-set! v i m) | v[i] = m   |
+|---------------------+------------|
+
+** Operators
+
+| GuileScript       | JavaScript        |
+|-------------------+-------------------|
+| + - * / < > <= >= | + - * / < > <= >= |
+|-------------------+-------------------|
+| equal?            | ===               |
+|-------------------+-------------------|
+
+** Math
+
+| GuileScript | JavaScript |
+|-------------+------------|
+| abs         | Math.abs   |
+|-------------+------------|
+| ceiling     | Math.ceil  |
+|-------------+------------|
+| floor       | Math.floor |
+|-------------+------------|
+| max         | Math.max   |
+|-------------+------------|
+| min         | Math.min   |
+|-------------+------------|
+| round       | Math.round |
+|-------------+------------|
+
+** Logging (just simple strings)
+
+| GuileScript | JavaScript    |
+|-------------+---------------|
+| log:info    | console.log   |
+|-------------+---------------|
+| log:error   | console.error |
+|-------------+---------------|
+| log:warn    | console.warn  |
+|-------------+---------------|
+
+** Basic constructs
+
+| GuileScript                       | JavaScript                                                                      |
+|-----------------------------------+---------------------------------------------------------------------------------|
+| (define a 23)                     | var a = 23;                                                                     |
+|-----------------------------------+---------------------------------------------------------------------------------|
+| (set! a 45)                       | a = 45;                                                                         |
+|-----------------------------------+---------------------------------------------------------------------------------|
+| (begin e1 e2 ... eN)              | (function () { e1; e2; ... return eN; })()                                      |
+|-----------------------------------+---------------------------------------------------------------------------------|
+| (if test then else)               | (test ? then : else)                                                            |
+|-----------------------------------+---------------------------------------------------------------------------------|
+| (cond ((t1 e1) (t2 e2) (else e3)) | With simple e1, e2, e3: (function () { return (t1 ? e1 : (t2 ? e2 : e3)) })()   |
+|-----------------------------------+---------------------------------------------------------------------------------|
+| (when test e1 e2 ... eN)          | (function () { if (test) { e1; e2; ... return eN; } })()                        |
+|-----------------------------------+---------------------------------------------------------------------------------|
+| (let ((x 0) ...) e1 ... eN)       | (function () { var x = 0; var ...; e1; ... return eN; })()                      |
+|-----------------------------------+---------------------------------------------------------------------------------|
+| (let lp ((x 0) (y 0)) e1 ... eN)  | (function () { var lp = function(x,y) { ... return eN; }; return lp(0, 0); })() |
+|-----------------------------------+---------------------------------------------------------------------------------|
+| (lambda (x y) ... eN)             | (function (x, y) { ... return eN; })                                            |
+|-----------------------------------+---------------------------------------------------------------------------------|
+| (define (f x y) ... eN)           | var f = function f(x, y) { ... return eN; };                                    |
+|-----------------------------------+---------------------------------------------------------------------------------|
+
+* License
+
+Copyright (C) 2022 Aleix Conchillo Flaque <aconchillo@gmail.com>
+
+GuileScript is free software: you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the
+Free Software Foundation; either version 3 of the License, or (at your
+option) any later version.
+
+GuileScript is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with GuileScript. If not, see https://www.gnu.org/licenses/.
