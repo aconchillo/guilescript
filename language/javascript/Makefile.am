@@ -22,7 +22,7 @@
 moddir=$(datadir)/guile/site/$(GUILE_EFFECTIVE_VERSION)/language/javascript
 objdir=$(libdir)/guile/$(GUILE_EFFECTIVE_VERSION)/site-ccache/language/javascript
 
-SOURCES = spec.scm decompile-js-tree-il.scm
+SOURCES = spec.scm decompile-tree-il.scm
 
 GOBJECTS = $(SOURCES:%.scm=%.go)
 

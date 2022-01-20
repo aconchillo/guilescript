@@ -1,4 +1,4 @@
-;;; (language javascript decompile-js-tree-il) --- GuileScript.
+;;; (language javascript decompile-tree-il) --- GuileScript.
 
 ;; Copyright (C) 2022 Aleix Conchillo Flaque <aconchillo@gmail.com>
 ;;
@@ -19,11 +19,11 @@
 
 ;;; Commentary:
 
-;; JavaScript Tree-IL to JavaScript decompiler
+;; Tree-IL to JavaScript decompiler
 
 ;;; Code:
 
-(define-module (language javascript decompile-js-tree-il)
+(define-module (language javascript decompile-tree-il)
   #:use-module (ice-9 format)
   #:use-module (ice-9 match)
   #:use-module (ice-9 receive)
@@ -35,9 +35,9 @@
   #:use-module (srfi srfi-43)
   #:use-module (system base compile)
   #:use-module (system base syntax)
-  #:export (decompile-js-tree-il))
+  #:export (decompile-tree-il))
 
-(define (decompile-js-tree-il e env opts)
+(define (decompile-tree-il e env opts)
   (apply do-decompile e env opts))
 
 (define* (do-decompile e env

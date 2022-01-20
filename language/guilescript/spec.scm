@@ -30,7 +30,8 @@
   #:export (guilescript))
 
 ;;;
-;;; Language definition
+;;; Language definition. For now, this is currently exactly the same as the
+;;; Scheme language definition.
 ;;;
 
 (define-language guilescript
@@ -43,7 +44,7 @@
                               fluid-ref)
                        read-syntax)
                    port))
-  #:compilers   `((js-tree-il . ,compile-tree-il))
+  #:compilers   `((tree-il . ,compile-tree-il))
   #:evaluator	(lambda (x module) (primitive-eval x))
   #:printer	write
   #:make-default-environment

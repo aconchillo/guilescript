@@ -25,7 +25,7 @@
 
 (define-module (language javascript spec)
   #:use-module (system base language)
-  #:use-module (language javascript decompile-js-tree-il)
+  #:use-module (language javascript decompile-tree-il)
   #:export (javascript))
 
 ;;;
@@ -35,5 +35,5 @@
 (define-language javascript
   #:title	"JavaScript"
   #:reader	(lambda (port env) (read port))
-  #:decompilers `((js-tree-il . ,decompile-js-tree-il))
+  #:decompilers `((tree-il . ,decompile-tree-il))
   #:printer	write)

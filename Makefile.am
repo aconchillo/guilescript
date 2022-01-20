@@ -21,7 +21,6 @@
 
 SUBDIRS = \
 	language/javascript \
-	language/js-tree-il \
 	language/guilescript
 
 dist_bin_SCRIPTS = guilescript
