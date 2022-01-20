@@ -22,7 +22,7 @@
 moddir=$(datadir)/guile/site/$(GUILE_EFFECTIVE_VERSION)/language/guilescript
 objdir=$(libdir)/guile/$(GUILE_EFFECTIVE_VERSION)/site-ccache/language/guilescript
 
-SOURCES = spec.scm compile.scm compile-ecmascript.scm
+SOURCES = spec.scm compile.scm
 
 GOBJECTS = $(SOURCES:%.scm=%.go)
 

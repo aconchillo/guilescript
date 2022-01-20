@@ -1,4 +1,4 @@
-;;; (language guilescript compile-ecmascript) --- GuileScript.
+;;; (language javascript decompile-js-tree-il) --- GuileScript.
 
 ;; Copyright (C) 2022 Aleix Conchillo Flaque <aconchillo@gmail.com>
 ;;
@@ -19,11 +19,11 @@
 
 ;;; Commentary:
 
-;; GuileScript Tree-IL compiler
+;; JavaScript Tree-IL to JavaScript decompiler
 
 ;;; Code:
 
-(define-module (language guilescript compile-ecmascript)
+(define-module (language javascript decompile-js-tree-il)
   #:use-module (ice-9 format)
   #:use-module (ice-9 match)
   #:use-module (ice-9 receive)
@@ -35,17 +35,17 @@
   #:use-module (srfi srfi-43)
   #:use-module (system base compile)
   #:use-module (system base syntax)
-  #:export (compile-ecmascript))
+  #:export (decompile-js-tree-il))
 
-(define (compile-ecmascript e env opts)
-  (apply do-compile e env opts))
+(define (decompile-js-tree-il e env opts)
+  (apply do-decompile e env opts))
 
-(define* (do-compile e env
-                     #:key
-                     (use-derived-syntax? #t)
-                     (use-case? #t)
-                     (strip-numeric-suffixes? #f)
-                     #:allow-other-keys)
+(define* (do-decompile e env
+                       #:key
+                       (use-derived-syntax? #t)
+                       (use-case? #t)
+                       (strip-numeric-suffixes? #f)
+                       #:allow-other-keys)
 
   (receive (output-name-table occurrence-count-table)
       (choose-output-names e use-derived-syntax? strip-numeric-suffixes?)
@@ -296,7 +296,7 @@
        ((<conditional> test consequent alternate)
         (build-conditional test consequent alternate indent port))))
 
-    (values (call-with-output-string (lambda (p) (recurse e 0 p) (put-string p "\n"))) env env)))
+    (values (call-with-output-string (lambda (p) (recurse e 0 p) (put-string p "\n"))) env)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;

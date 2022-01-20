@@ -38,17 +38,17 @@
      (else exp))))
 
 (define (compile port)
-  (let* ((from (lookup-language 'scheme))
-         (to (lookup-language 'tree-il))
+  (let* ((from (lookup-language 'guilescript))
+         (to (lookup-language 'js-tree-il))
          (joiner (language-joiner to))
          (env (default-environment from)))
     (let lp ((exps '()))
       (match (read-and-parse from port env)
         ((? eof-object?)
-         (system:compile (joiner (reverse exps) env) #:from 'guilescript #:to 'ecmascript))
+         (system:decompile (joiner (reverse exps) env) #:from 'js-tree-il #:to 'javascript))
         (e
          (receive (exp)
-             (system:compile e #:to 'tree-il)
+             (system:compile e #:from 'guilescript #:to 'js-tree-il)
            (lp (cons exp exps))))))))
 
 (define (compile-file filename)
