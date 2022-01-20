@@ -24,34 +24,13 @@
 ;;; Code:
 
 (define-module (language guilescript compile)
-  #:use-module (ice-9 match)
-  #:use-module (ice-9 receive)
-  #:use-module ((system base compile) #:prefix system:)
-  #:use-module (system base language)
-  #:export (compile compile-file))
-
-(define (read-and-parse lang port cenv)
-  (let ((exp ((language-reader lang) port cenv)))
-    (cond
-     ((eof-object? exp) exp)
-     ((language-parser lang) => (lambda (parse) (parse exp)))
-     (else exp))))
-
-(define (compile port)
-  (let* ((from (lookup-language 'guilescript))
-         (to (lookup-language 'tree-il))
-         (joiner (language-joiner to))
-         (env (default-environment from)))
-    (let lp ((exps '()))
-      (match (read-and-parse from port env)
-        ((? eof-object?)
-         (system:decompile (joiner (reverse exps) env) #:from 'tree-il #:to 'javascript))
-        (e
-         (receive (exp)
-             (system:compile e #:from 'guilescript #:to 'tree-il)
-           (lp (cons exp exps))))))))
+  #:use-module ((system base compile))
+  #:export (compile-file))
 
 (define (compile-file filename)
   (call-with-input-file
       filename
-    (lambda (p) (display (compile p)))))
+    (lambda (p)
+      (let* ((tree-il (read-and-compile p #:from 'guilescript #:to 'tree-il))
+             (js (decompile tree-il #:from 'tree-il #:to 'javascript)))
+        (display js)))))
