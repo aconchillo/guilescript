@@ -24,13 +24,17 @@
 ;;; Code:
 
 (define-module (language guilescript compile)
-  #:use-module ((system base compile))
-  #:export (compile-file))
+  #:use-module ((system base compile) #:prefix system:)
+  #:export (compile compile-file))
+
+(define (compile exp)
+  (system:decompile
+   (system:compile exp #:from 'guilescript #:to 'tree-il)
+   #:from 'tree-il #:to 'javascript))
 
 (define (compile-file filename)
   (call-with-input-file
       filename
     (lambda (p)
-      (let* ((tree-il (read-and-compile p #:from 'guilescript #:to 'tree-il))
-             (js (decompile tree-il #:from 'tree-il #:to 'javascript)))
-        (display js)))))
+      (let ((tree-il (system:read-and-compile p #:from 'guilescript #:to 'tree-il)))
+        (system:decompile tree-il #:from 'tree-il #:to 'javascript)))))
