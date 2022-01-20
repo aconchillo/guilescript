@@ -137,9 +137,11 @@
 
     (define (wrap-with-return body context indent port)
       (when (and (eq? context 'return) (not (seq? body)))
+        (build-indent-string port indent)
         (put-string port "return "))
       (recurse body 'statement indent port)
-      (put-string port ";\n"))
+      (unless (seq? body)
+        (put-string port ";\n")))
 
     (define (build-vector exp port)
       (put-string port "[")
@@ -222,7 +224,8 @@
 
     (define (build-seq head tail context indent port)
       (build-indent-string port indent)
-      (wrap-with-return head context indent port)
+      (recurse head context indent port)
+      (put-string port ";\n")
       (wrap-with-return tail context indent port))
 
     (define (build-let vars vals body indent port)
