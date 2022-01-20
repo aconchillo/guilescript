@@ -157,7 +157,6 @@
       (cond
        ((nil? exp) (put-string port "null"))
        ((number? exp) (format port "~a" (if (integer? exp) exp (exact->inexact exp))))
-       ((symbol? exp) (format port "\"~a\"" exp))
        ((string? exp) (format port "\"~a\"" exp))
        ((boolean? exp) (put-string port (if exp "true" "false")))
        ((vector? exp) (build-vector exp port))))
