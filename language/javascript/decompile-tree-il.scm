@@ -64,7 +64,7 @@
        (string-join
         (map
          (lambda (arg)
-           (call-with-output-string (lambda (p) (recurse arg 0 p))))
+           (call-with-output-string (lambda (p) (recurse arg 'statement 0 p))))
          args)
         ","))
       (put-string port ")"))
@@ -74,28 +74,28 @@
       (put-string
        port
        (string-join
-        (map (lambda (arg) (call-with-output-string (lambda (p) (recurse arg 0 p)))) args)
+        (map (lambda (arg) (call-with-output-string (lambda (p) (recurse arg 'statement 0 p)))) args)
         (symbol->string op)))
       (put-string port ")"))
 
     (define (translate-binary-operator op args port)
-      (put-string port (call-with-output-string (lambda (p) (recurse (first args) 0 p))))
+      (put-string port (call-with-output-string (lambda (p) (recurse (first args) 'statement 0 p))))
       (put-string port (symbol->string op))
-      (put-string port (call-with-output-string (lambda (p) (recurse (second args) 0 p)))))
+      (put-string port (call-with-output-string (lambda (p) (recurse (second args) 'statement 0 p)))))
 
     (define (translate-vector-length args port)
-      (format port "~a.length" (call-with-output-string (lambda (p) (recurse (first args) 0 p)))))
+      (format port "~a.length" (call-with-output-string (lambda (p) (recurse (first args) 'statement 0 p)))))
 
     (define (translate-vector-ref args port)
       (format port "~a[~a]"
-              (call-with-output-string (lambda (p) (recurse (first args) 0 p)))
-              (call-with-output-string (lambda (p) (recurse (second args) 0 p)))))
+              (call-with-output-string (lambda (p) (recurse (first args) 'statement 0 p)))
+              (call-with-output-string (lambda (p) (recurse (second args) 'statement 0 p)))))
 
     (define (translate-vector-set! args port)
       (format port "~a[~a] = ~a"
-              (call-with-output-string (lambda (p) (recurse (first args) 0 p)))
-              (call-with-output-string (lambda (p) (recurse (second args) 0 p)))
-              (call-with-output-string (lambda (p) (recurse (third args) 0 p)))))
+              (call-with-output-string (lambda (p) (recurse (first args) 'statement 0 p)))
+              (call-with-output-string (lambda (p) (recurse (second args) 'statement 0 p)))
+              (call-with-output-string (lambda (p) (recurse (third args) 'statement 0 p)))))
 
     ;; TODO: Probably use a hash table for constant access, but for now this is
     ;; fine. We could even check for right number of arguments, etc.
@@ -135,13 +135,11 @@
     (define (output-name s)
       (hashq-ref output-name-table s))
 
-    (define (wrap-with-return body indent port)
-      (unless (seq? body)
-        (build-indent-string port indent)
+    (define (wrap-with-return body context indent port)
+      (when (and (eq? context 'return) (not (seq? body)))
         (put-string port "return "))
-      (recurse body indent port)
-      (unless (seq? body)
-        (put-string port ";\n")))
+      (recurse body 'statement indent port)
+      (put-string port ";\n"))
 
     (define (build-vector exp port)
       (put-string port "[")
@@ -166,20 +164,20 @@
 
     (define (build-define name exp indent port)
       (format port "var ~a = " (symbol->string name))
-      (recurse exp indent port))
+      (recurse exp 'statement indent port))
 
     (define (build-set name exp indent port)
       (format port "~a = " (symbol->string name))
-      (recurse exp indent port))
+      (recurse exp 'statement indent port))
 
     (define (build-function meta body indent port)
       (let ((name (assoc-ref meta 'name)))
         (format port "function ~a" name)
-        (recurse body indent port)))
+        (recurse body 'return indent port)))
 
     (define (build-anonymous-function meta body indent port)
       (put-string port "(function")
-      (recurse body indent port)
+      (recurse body 'return indent port)
       (put-string port ")"))
 
     (define (build-lambda meta body indent port)
@@ -191,7 +189,7 @@
       (put-string port "(")
       (put-string port (string-join (map symbol->string req) ","))
       (put-string port ") {\n")
-      (wrap-with-return body (+ indent 1) port)
+      (wrap-with-return body 'return (+ indent 1) port)
       (build-indent-string port indent)
       (put-string port "}"))
 
@@ -199,10 +197,10 @@
       (put-string port "(function () {\n")
       (build-indent-string port (+ indent 1))
       (put-string port "if (")
-      (recurse test 0 port)
+      (recurse test 'statement 0 port)
       (put-string port ") {\n")
       (build-indent-string port (+ indent 2))
-      (wrap-with-return consequent (+ indent 2) port)
+      (wrap-with-return consequent 'return (+ indent 2) port)
       (build-indent-string port (+ indent 1))
       (put-string port "}\n")
       (build-indent-string port indent)
@@ -210,11 +208,11 @@
 
     (define (build-if-ternary test consequent alternate indent port)
       (put-string port "(")
-      (recurse test indent port)
+      (recurse test 'statement 0 port)
       (put-string port " ? ")
-      (recurse consequent indent port)
+      (recurse consequent 'statement indent port)
       (put-string port " : ")
-      (recurse alternate indent port)
+      (recurse alternate 'statement indent port)
       (put-string port ")"))
 
     (define (build-conditional test consequent alternate indent port)
@@ -222,11 +220,10 @@
           (build-if test consequent indent port)
           (build-if-ternary test consequent alternate indent port)))
 
-    (define (build-seq head tail indent port)
+    (define (build-seq head tail context indent port)
       (build-indent-string port indent)
-      (recurse head indent port)
-      (put-string port ";\n")
-      (wrap-with-return tail indent port))
+      (wrap-with-return head context indent port)
+      (wrap-with-return tail context indent port))
 
     (define (build-let vars vals body indent port)
       (put-string port "(function (){\n")
@@ -234,9 +231,9 @@
        (lambda (var val)
          (build-indent-string port (+ indent 1))
          (format port "var ~a = ~a;\n"
-                 var (call-with-output-string (lambda (p) (recurse val 0 p)))))
+                 var (call-with-output-string (lambda (p) (recurse val 'statement indent p)))))
        vars vals)
-      (wrap-with-return body (+ indent 1) port)
+      (wrap-with-return body 'return (+ indent 1) port)
       (build-indent-string port indent)
       (put-string port "})()"))
 
@@ -245,11 +242,11 @@
       (build-indent-string port (+ indent 1))
       (build-define (car vars) (car vals) (+ indent 1) port)
       (put-string port ";\n")
-      (wrap-with-return body (+ indent 1) port)
+      (wrap-with-return body 'return (+ indent 1) port)
       (build-indent-string port indent)
       (put-string port "})()"))
 
-    (define (recurse e indent port)
+    (define (recurse e context indent port)
       (record-case
        e
 
@@ -290,12 +287,12 @@
         (build-call proc args indent port))
 
        ((<seq> head tail)
-        (build-seq head tail indent port))
+        (build-seq head tail context indent port))
 
        ((<conditional> test consequent alternate)
         (build-conditional test consequent alternate indent port))))
 
-    (values (call-with-output-string (lambda (p) (recurse e 0 p) (put-string p "\n"))) env)))
+    (values (call-with-output-string (lambda (p) (recurse e 'statement 0 p) (put-string p "\n"))) env)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
