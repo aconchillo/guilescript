@@ -122,6 +122,13 @@ And even long term:
 
 ** Operators
 
+| GuileScript                 | JavaScript                |
+|-----------------------------+---------------------------|
+| (.method obj arg1 ... argN) | obj.method(arg1,...,argN) |
+|-----------------------------+---------------------------|
+
+** Operators
+
 | GuileScript       | JavaScript        |
 |-------------------+-------------------|
 | + - * / < > <= >= | + - * / < > <= >= |

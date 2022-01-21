@@ -30,12 +30,6 @@
   #:use-module (language tree-il)
   #:export (translate-function))
 
-(define (binary-operator? op)
-  (member op '(< > <= >=)))
-
-(define (arithmetic-operator? op)
-  (member op '(+ - * /)))
-
 (define (translate-identity proc args recurse port)
   (put-string port (symbol->string proc))
   (put-string port "(")
@@ -48,6 +42,16 @@
      args)
     ","))
   (put-string port ")"))
+
+;;
+;; Operators
+;;
+
+(define (binary-operator? op)
+  (member op '(< > <= >=)))
+
+(define (arithmetic-operator? op)
+  (member op '(+ - * /)))
 
 (define (translate-arithmetic-operator op args recurse port)
   (put-string port "(")
@@ -63,6 +67,10 @@
   (put-string port (symbol->string op))
   (put-string port (call-with-output-string (lambda (p) (recurse (second args) 'statement 0 p)))))
 
+;;
+;; Vectors (and strings)
+;;
+
 (define (translate-vector-length args recurse port)
   (format port "~a.length" (call-with-output-string (lambda (p) (recurse (first args) 'statement 0 p)))))
 
@@ -76,6 +84,29 @@
           (call-with-output-string (lambda (p) (recurse (first args) 'statement 0 p)))
           (call-with-output-string (lambda (p) (recurse (second args) 'statement 0 p)))
           (call-with-output-string (lambda (p) (recurse (third args) 'statement 0 p)))))
+
+;;
+;; Object calls
+;;
+
+(define (object-call? op)
+  (eq? (string-ref (symbol->string op) 0) #\.))
+
+(define (translate-object-call op args recurse port)
+  (let ((obj (call-with-output-string (lambda (p) (recurse (first args) 'statement 0 p)))))
+    (format port "~a~a" obj op)
+    (put-string port "(")
+    (put-string
+     port
+     (string-join
+      (map (lambda (arg) (call-with-output-string (lambda (p) (recurse arg 'statement 0 p)))) (cdr args))
+      ","))
+    (put-string port ")")))
+
+(define (translate-vector-ref args recurse port)
+  (format port "~a[~a]"
+          (call-with-output-string (lambda (p) (recurse (first args) 'statement 0 p)))
+          (call-with-output-string (lambda (p) (recurse (second args) 'statement 0 p)))))
 
 ;; TODO: Probably use a hash table for constant access, but for now this is
 ;; fine. We could even check for right number of arguments, etc.
@@ -105,5 +136,7 @@
       ('equal? (translate-binary-operator '=== args recurse port))
       ((? binary-operator?) (translate-binary-operator op args recurse port))
       ((? arithmetic-operator?) (translate-arithmetic-operator op args recurse port))
+      ;; Object calls
+      ((? object-call?) (translate-object-call op args recurse port))
       ;; Anything else
       (_ (translate-identity op args recurse port)))))
