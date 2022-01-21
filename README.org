@@ -120,7 +120,7 @@ And even long term:
 | (vector-set! v i m) | v[i] = m   |
 |---------------------+------------|
 
-** Operators
+** Objects
 
 | GuileScript                 | JavaScript                |
 |-----------------------------+---------------------------|
