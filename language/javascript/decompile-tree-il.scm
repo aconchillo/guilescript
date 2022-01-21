@@ -25,7 +25,6 @@
 
 (define-module (language javascript decompile-tree-il)
   #:use-module (ice-9 format)
-  #:use-module (ice-9 match)
   #:use-module (ice-9 receive)
   #:use-module (ice-9 textual-ports)
   #:use-module (ice-9 vlist)
@@ -33,7 +32,7 @@
   #:use-module (srfi srfi-1)
   #:use-module (srfi srfi-26)
   #:use-module (srfi srfi-43)
-  #:use-module (system base compile)
+  #:use-module (language javascript functions)
   #:use-module (system base syntax)
   #:export (decompile-tree-il))
 
@@ -49,85 +48,6 @@
 
   (receive (output-name-table occurrence-count-table)
       (choose-output-names e use-derived-syntax? strip-numeric-suffixes?)
-
-    (define (binary-operator? op)
-      (member op '(< > <= >=)))
-
-    (define (arithmetic-operator? op)
-      (member op '(+ - * /)))
-
-    (define (translate-identity proc args port)
-      (put-string port (symbol->string proc))
-      (put-string port "(")
-      (put-string
-       port
-       (string-join
-        (map
-         (lambda (arg)
-           (call-with-output-string (lambda (p) (recurse arg 'statement 0 p))))
-         args)
-        ","))
-      (put-string port ")"))
-
-    (define (translate-arithmetic-operator op args port)
-      (put-string port "(")
-      (put-string
-       port
-       (string-join
-        (map (lambda (arg) (call-with-output-string (lambda (p) (recurse arg 'statement 0 p)))) args)
-        (symbol->string op)))
-      (put-string port ")"))
-
-    (define (translate-binary-operator op args port)
-      (put-string port (call-with-output-string (lambda (p) (recurse (first args) 'statement 0 p))))
-      (put-string port (symbol->string op))
-      (put-string port (call-with-output-string (lambda (p) (recurse (second args) 'statement 0 p)))))
-
-    (define (translate-vector-length args port)
-      (format port "~a.length" (call-with-output-string (lambda (p) (recurse (first args) 'statement 0 p)))))
-
-    (define (translate-vector-ref args port)
-      (format port "~a[~a]"
-              (call-with-output-string (lambda (p) (recurse (first args) 'statement 0 p)))
-              (call-with-output-string (lambda (p) (recurse (second args) 'statement 0 p)))))
-
-    (define (translate-vector-set! args port)
-      (format port "~a[~a] = ~a"
-              (call-with-output-string (lambda (p) (recurse (first args) 'statement 0 p)))
-              (call-with-output-string (lambda (p) (recurse (second args) 'statement 0 p)))
-              (call-with-output-string (lambda (p) (recurse (third args) 'statement 0 p)))))
-
-    ;; TODO: Probably use a hash table for constant access, but for now this is
-    ;; fine. We could even check for right number of arguments, etc.
-    (define (translate-function proc args port)
-      (let ((op (or (output-name (toplevel-ref-name proc))
-                    (toplevel-ref-name proc))))
-        (match op
-          ;; Logging
-          ('log:info (translate-identity 'console.log args port))
-          ('log:error (translate-identity 'console.error args port))
-          ('log:warn (translate-identity 'console.warn args port))
-          ;; Math
-          ('abs (translate-identity 'Math.abs args port))
-          ('ceiling (translate-identity 'Math.ceil args port))
-          ('floor (translate-identity 'Math.floor args port))
-          ('max (translate-identity 'Math.max args port))
-          ('min (translate-identity 'Math.min args port
-                 ))
-          ('round (translate-identity 'Math.round args port))
-          ;; Strings
-          ('string-length (translate-vector-length args port))
-          ('string-ref (translate-vector-ref args port))
-          ;; Vectors
-          ('vector-length (translate-vector-length args port))
-          ('vector-ref (translate-vector-ref args port))
-          ('vector-set! (translate-vector-set! args port))
-          ;; Operators
-          ('equal? (translate-binary-operator '=== args port))
-          ((? binary-operator?) (translate-binary-operator op args port))
-          ((? arithmetic-operator?) (translate-arithmetic-operator op args port))
-          ;; Anything else
-          (_ (translate-identity op args port)))))
 
     (define (build-indent-string port level)
       (put-string port (format #f "~v_" (* 2 level))))
@@ -162,7 +82,7 @@
        ((vector? exp) (build-vector exp port))))
 
     (define (build-call proc args indent port)
-      (translate-function proc args port))
+      (translate-function proc args recurse output-name port))
 
     (define (build-define name exp indent port)
       (format port "var ~a = " (symbol->string name))

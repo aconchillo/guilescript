@@ -1,3 +1,14 @@
+* Version 0.1.0 (??)
+
+  - Create 'javascript language which actually decompiles from 'tree-il. So basically we do:
+    compile(guilescript) -> 'tree-il -> decompile(tree-il) -> javascript.
+
+  - Split function translation into its own file.
+
+  - Fix ending statement semicolon issues.
+
+  - Return statements should only be allowed inside functions.
+
 * Version 0.0.0 (Jan 17, 2022)
 
   - Initial release.
