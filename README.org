@@ -34,7 +34,7 @@ $ sudo make install
 If you are on macOS you can actually install GuileScript through [[https://github.com/aconchillo/homebrew-guile][Guile Homebrew]]:
 
 #+BEGIN_EXAMPLE
-$ brew install guilescript
+$ brew install aconchillo/guile/guilescript
 #+END_EXAMPLE
 
 If everything builds and installs fine you can try to compile one of the

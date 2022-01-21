@@ -19,7 +19,7 @@
 # along with GuileScript. If not, see https://www.gnu.org/licenses/.
 #
 
-AC_INIT([guilescript], [0.0.0], [aconchillo@gmail.com])
+AC_INIT([guilescript], [0.1.0], [aconchillo@gmail.com])
 AC_CONFIG_MACRO_DIRS([m4])
 AC_CONFIG_SRCDIR(language/guilescript)
 AC_CONFIG_AUX_DIR([build-aux])

@@ -1,4 +1,6 @@
-* Version 0.1.0 (??)
+* Version 0.1.0 (Jan 21, 2022)
+
+  - Very primitive JavaScript object method calls.
 
   - Create 'javascript language which actually decompiles from 'tree-il. So basically we do:
     compile(guilescript) -> 'tree-il -> decompile(tree-il) -> javascript.
