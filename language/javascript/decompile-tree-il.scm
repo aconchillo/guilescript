@@ -59,7 +59,7 @@
       (when (and (eq? context 'return) (not (seq? body)))
         (build-indent-string port indent)
         (put-string port "return "))
-      (recurse body 'statement indent port)
+      (recurse body context indent port)
       (unless (seq? body)
         (put-string port ";\n")))
 
@@ -85,12 +85,15 @@
       (translate-function proc args recurse output-name port))
 
     (define (build-define name exp indent port)
-      (format port "var ~a = " (symbol->string name))
-      (recurse exp 'statement indent port))
+      (unless (primcall? exp)
+        (format port "var ~a = " (symbol->string name))
+        (recurse exp 'statement indent port)
+        (put-string port ";\n")))
 
     (define (build-set name exp indent port)
       (format port "~a = " (symbol->string name))
-      (recurse exp 'statement indent port))
+      (recurse exp 'statement indent port)
+      (put-string port ";\n"))
 
     (define (build-function meta body indent port)
       (let ((name (assoc-ref meta 'name)))
@@ -121,7 +124,6 @@
       (put-string port "if (")
       (recurse test 'statement 0 port)
       (put-string port ") {\n")
-      (build-indent-string port (+ indent 2))
       (wrap-with-return consequent 'return (+ indent 2) port)
       (build-indent-string port (+ indent 1))
       (put-string port "}\n")
@@ -145,11 +147,12 @@
     (define (build-seq head tail context indent port)
       (build-indent-string port indent)
       (recurse head context indent port)
-      (put-string port ";\n")
+      (when (call? head)
+        (put-string port ";\n"))
       (wrap-with-return tail context indent port))
 
     (define (build-let vars vals body indent port)
-      (put-string port "(function (){\n")
+      (put-string port "(function () {\n")
       (for-each
        (lambda (var val)
          (build-indent-string port (+ indent 1))
@@ -161,10 +164,9 @@
       (put-string port "})()"))
 
     (define (build-letrec in-order? vars vals body indent port)
-      (put-string port "(function (){\n")
+      (put-string port "(function () {\n")
       (build-indent-string port (+ indent 1))
       (build-define (car vars) (car vals) (+ indent 1) port)
-      (put-string port ";\n")
       (wrap-with-return body 'return (+ indent 1) port)
       (build-indent-string port indent)
       (put-string port "})()"))
@@ -213,9 +215,17 @@
         (build-seq head tail context indent port))
 
        ((<conditional> test consequent alternate)
-        (build-conditional test consequent alternate indent port))))
+        (build-conditional test consequent alternate indent port))
 
-    (values (call-with-output-string (lambda (p) (recurse e 'statement 0 p) (put-string p "\n"))) env)))
+       ((<primcall> name args)
+        #f)))
+
+    (values
+     (call-with-output-string
+       (lambda (p)
+         (recurse e 'statement 0 p)
+         (put-string p "\n")))
+     env)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;

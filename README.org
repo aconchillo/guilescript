@@ -189,6 +189,14 @@ And even long term:
 | (define (f x y) ... eN)           | var f = function f(x, y) { ... return eN; };                                    |
 |-----------------------------------+---------------------------------------------------------------------------------|
 
+** Macros
+
+Macros (define-syntax, syntax-rules, syntax-case) just work out of the box. This
+is because the Scheme-To-Tree-IL compiler performs macro expansion at the same
+time it analyzes the code, producing expanded Tree-IL expressions which is what
+GuileScript actually needs.
+
+
 * License
 
 Copyright (C) 2022 Aleix Conchillo Flaque <aconchillo@gmail.com>
