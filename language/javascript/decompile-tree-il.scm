@@ -49,11 +49,11 @@
   (receive (output-name-table occurrence-count-table)
       (choose-output-names e use-derived-syntax? strip-numeric-suffixes?)
 
-    (define (build-indent-string port level)
-      (put-string port (format #f "~v_" (* 2 level))))
-
     (define (output-name s)
       (hashq-ref output-name-table s))
+
+    (define (build-indent-string port level)
+      (put-string port (format #f "~v_" (* 2 level))))
 
     (define (wrap-with-return body context indent port)
       (when (and (eq? context 'return) (not (seq? body)))
@@ -78,6 +78,7 @@
        ((nil? exp) (put-string port "null"))
        ((number? exp) (format port "~a" (if (integer? exp) exp (exact->inexact exp))))
        ((string? exp) (format port "\"~a\"" exp))
+       ((symbol? exp) (format port "~a" (symbol->string exp)))
        ((boolean? exp) (put-string port (if exp "true" "false")))
        ((vector? exp) (build-vector exp port))))
 

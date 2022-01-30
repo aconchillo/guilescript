@@ -86,15 +86,24 @@
           (call-with-output-string (lambda (p) (recurse (third args) 'statement 0 p)))))
 
 ;;
-;; Object calls
+;; Objects
 ;;
 
-(define (object-call? op)
-  (eq? (string-ref (symbol->string op) 0) #\.))
+(define (translate-js-invoke op args recurse port)
+  (let ((obj (call-with-output-string (lambda (p) (recurse (first args) 'statement 0 p))))
+        (method (call-with-output-string (lambda (p) (recurse (second args) 'statement 0 p)))))
+    (format port "~a.~a" obj method)
+    (put-string port "(")
+    (put-string
+     port
+     (string-join
+      (map (lambda (arg) (call-with-output-string (lambda (p) (recurse arg 'statement 0 p)))) (cddr args))
+      ","))
+    (put-string port ")")))
 
-(define (translate-object-call op args recurse port)
-  (let ((obj (call-with-output-string (lambda (p) (recurse (first args) 'statement 0 p)))))
-    (format port "~a~a" obj op)
+(define (translate-js-new op args recurse port)
+  (let ((type (call-with-output-string (lambda (p) (recurse (first args) 'statement 0 p)))))
+    (format port "new ~a" type)
     (put-string port "(")
     (put-string
      port
@@ -103,10 +112,16 @@
       ","))
     (put-string port ")")))
 
-(define (translate-vector-ref args recurse port)
-  (format port "~a[~a]"
-          (call-with-output-string (lambda (p) (recurse (first args) 'statement 0 p)))
-          (call-with-output-string (lambda (p) (recurse (second args) 'statement 0 p)))))
+(define (translate-js-ref op args recurse port)
+  (let ((obj (call-with-output-string (lambda (p) (recurse (first args) 'statement 0 p))))
+        (prop (call-with-output-string (lambda (p) (recurse (second args) 'statement 0 p)))))
+    (format port "~a.~a" obj prop)))
+
+(define (translate-js-set! op args recurse port)
+  (let ((obj (call-with-output-string (lambda (p) (recurse (first args) 'statement 0 p))))
+        (prop (call-with-output-string (lambda (p) (recurse (second args) 'statement 0 p))))
+        (value (call-with-output-string (lambda (p) (recurse (third args) 'statement 0 p)))))
+    (format port "~a.~a = ~a" obj prop value)))
 
 ;; TODO: Probably use a hash table for constant access, but for now this is
 ;; fine. We could even check for right number of arguments, etc.
@@ -133,11 +148,14 @@
       ('vector-length (translate-vector-length args recurse port))
       ('vector-ref (translate-vector-ref args recurse port))
       ('vector-set! (translate-vector-set! args recurse port))
+      ;; Objects
+      ('js-invoke (translate-js-invoke op args recurse port))
+      ('js-new (translate-js-new op args recurse port))
+      ('js-ref (translate-js-ref op args recurse port))
+      ('js-set! (translate-js-set! op args recurse port))
       ;; Operators
       ('equal? (translate-binary-operator '=== args recurse port))
       ((? binary-operator?) (translate-binary-operator op args recurse port))
       ((? arithmetic-operator?) (translate-arithmetic-operator op args recurse port))
-      ;; Object calls
-      ((? object-call?) (translate-object-call op args recurse port))
       ;; Anything else
       (_ (translate-identity op args recurse port)))))
