@@ -32,6 +32,9 @@ dist-hook:
 
 EXTRA_DIST = \
 	examples/binary_search.gs \
+	examples/date.gs \
 	examples/fib.gs \
 	examples/halve.gs \
+	examples/macro_add1.gs \
+	examples/macro_when.gs \
 	examples/vector_reverse.gs
