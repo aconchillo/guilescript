@@ -155,14 +155,16 @@ And even long term:
 
 ** Logging (just simple strings)
 
-| GuileScript | JavaScript    |
-|-------------+---------------|
-| log:info    | console.log   |
-|-------------+---------------|
-| log:error   | console.error |
-|-------------+---------------|
-| log:warn    | console.warn  |
-|-------------+---------------|
+| GuileScript   | JavaScript    |
+|---------------+---------------|
+| console-log   | console.log   |
+|---------------+---------------|
+| console-debug | console.debug |
+|---------------+---------------|
+| console-error | console.error |
+|---------------+---------------|
+| console-warn  | console.warn  |
+|---------------+---------------|
 
 ** Basic constructs
 

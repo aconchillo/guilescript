@@ -11,4 +11,4 @@
 
 (define value 0)
 
-(log:info (add1 value))
+(console-log (add1 value))

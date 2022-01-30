@@ -115,9 +115,10 @@
                 (toplevel-ref-name proc))))
     (match op
       ;; Logging
-      ('log:info (translate-identity 'console.log args recurse port))
-      ('log:error (translate-identity 'console.error args recurse port))
-      ('log:warn (translate-identity 'console.warn args recurse port))
+      ('console-log (translate-identity 'console.log args recurse port))
+      ('console-debug (translate-identity 'console.debug args recurse port))
+      ('console-error (translate-identity 'console.error args recurse port))
+      ('console-warn (translate-identity 'console.warn args recurse port))
       ;; Math
       ('abs (translate-identity 'Math.abs args recurse port))
       ('ceiling (translate-identity 'Math.ceil args recurse port))

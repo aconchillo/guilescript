@@ -10,5 +10,5 @@
          (begin exp ...)))))
 
 (my-when #t
-  (log:info "hey ho")
-  (log:info "let's go"))
+  (console-log "hey ho")
+  (console-log "let's go"))
