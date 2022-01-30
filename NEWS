@@ -1,3 +1,14 @@
+
+* Version 0.2.0 (Jan 30, 2022)
+
+  - Add initial macro support.
+
+  - Rename log:info, log:warn and log:error to console-log, console-warn and
+    consoler-error respectively. Also add console-debug.
+
+  - Removed special syntax to access JavaScript objects and added js-ref,
+    js-set!, js-new and js-invoke.
+
 * Version 0.1.0 (Jan 21, 2022)
 
   - Very primitive JavaScript object method calls.
