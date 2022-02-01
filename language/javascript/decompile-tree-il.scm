@@ -67,20 +67,34 @@
       (put-string port "[")
       (vector-for-each
        (lambda (i v)
-         (build-const v port)
+         (build-const v 0 port)
          (when (< i (- (vector-length exp) 1))
            (put-char port #\,)))
        exp)
       (put-string port "]"))
 
-    (define (build-const exp port)
+    (define (build-object exp indent port)
+      (put-string port "{\n")
+      (for-each
+       (lambda (entry)
+         (build-indent-string port (+ indent 1))
+         (build-const (car entry) (+ indent 1) port)
+         (put-string port " : ")
+         (build-const (cdr entry) (+ indent 1) port)
+         (put-string port ",\n"))
+       exp)
+      (build-indent-string port indent)
+      (put-string port "}"))
+
+    (define (build-const exp indent port)
       (cond
        ((nil? exp) (put-string port "null"))
        ((number? exp) (format port "~a" (if (integer? exp) exp (exact->inexact exp))))
        ((string? exp) (format port "\"~a\"" exp))
        ((symbol? exp) (format port "~a" (symbol->string exp)))
        ((boolean? exp) (put-string port (if exp "true" "false")))
-       ((vector? exp) (build-vector exp port))))
+       ((vector? exp) (build-vector exp port))
+       ((pair? exp) (build-object exp indent port))))
 
     (define (build-call proc args indent port)
       (translate-function proc args recurse output-name port))
@@ -180,7 +194,7 @@
         (if #f #f))
 
        ((<const> exp)
-        (build-const exp port))
+        (build-const exp indent port))
 
        ((<lexical-ref> gensym)
         (put-string port (symbol->string (output-name gensym))))
