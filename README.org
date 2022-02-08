@@ -8,7 +8,7 @@ JavaScript. It currently doesn't do much, but it might in the future.
 
 Because, why not? [[https://www.gnu.org/software/guile/][Guile]] is actually a lot of fun and I just got jealous that
 people could do these sort of [[https://twitter.com/zaneshelby/status/1477988369154121734?s=20][cool things with ClojureScript]] and I couldn't with
-Guile. Of course, I still can't but wishful thinking is a good thing after all.
+Guile. But thanks to GuileScript it is now with [[https://github.com/aconchillo/gas][gas]].
 
 * How does it work?
 
