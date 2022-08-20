@@ -1,4 +1,4 @@
-;;; (language javascript functions) --- GuileScript.
+;;; (language javascript translate) --- GuileScript.
 
 ;; Copyright (C) 2022 Aleix Conchillo Flaque <aconchillo@gmail.com>
 ;;
@@ -19,16 +19,16 @@
 
 ;;; Commentary:
 
-;; JavaScript functions
+;; JavaScript function translation
 
 ;;; Code:
 
-(define-module (language javascript functions)
+(define-module (language javascript translate)
   #:use-module (ice-9 match)
   #:use-module (ice-9 textual-ports)
   #:use-module (srfi srfi-1)
   #:use-module (language tree-il)
-  #:export (translate-function))
+  #:export (translate-call))
 
 (define (translate-identity proc args recurse port)
   (put-string port (symbol->string proc))
@@ -125,7 +125,7 @@
 
 ;; TODO: Probably use a hash table for constant access, but for now this is
 ;; fine. We could even check for right number of arguments, etc.
-(define (translate-function proc args recurse output-name port)
+(define (translate-call proc args recurse output-name port)
   (let ((op (or (output-name (toplevel-ref-name proc))
                 (toplevel-ref-name proc))))
     (match op

@@ -32,7 +32,7 @@
   #:use-module (srfi srfi-1)
   #:use-module (srfi srfi-26)
   #:use-module (srfi srfi-43)
-  #:use-module (language javascript functions)
+  #:use-module (language javascript translate)
   #:use-module (system base syntax)
   #:export (decompile-tree-il))
 
@@ -97,7 +97,7 @@
        ((pair? exp) (build-object exp indent port))))
 
     (define (build-call proc args indent port)
-      (translate-function proc args recurse output-name port))
+      (translate-call proc args recurse output-name port))
 
     (define (build-define name exp indent port)
       (unless (primcall? exp)
