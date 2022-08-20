@@ -60,7 +60,7 @@
         (build-indent-string port indent)
         (put-string port "return "))
       (recurse body context indent port)
-      (unless (seq? body)
+      (when (and (not (seq? body)) (or (eq? context 'return) (call? body)))
         (put-string port ";\n")))
 
     (define (build-vector exp port)
