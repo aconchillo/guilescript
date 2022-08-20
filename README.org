@@ -38,7 +38,7 @@ $ brew install aconchillo/guile/guilescript
 #+END_EXAMPLE
 
 If everything builds and installs fine you can try to compile one of the
-provided examples (e.g. =examples/fib.gs=):
+provided examples (e.g. =examples/fibonacci.gs=):
 
 #+BEGIN_SRC scheme
 (define (fib n)
@@ -48,7 +48,7 @@ provided examples (e.g. =examples/fib.gs=):
 #+END_SRC
 
 #+BEGIN_EXAMPLE
-$ guilescript examples/fib.gs
+$ guilescript examples/fibonacci.gs
 #+END_EXAMPLE
 
 which in this case would generate something like:
