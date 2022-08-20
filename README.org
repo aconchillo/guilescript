@@ -56,7 +56,7 @@ which in this case would generate something like:
 #+BEGIN_SRC javascript
 var fib = function fib(n) {
   return ((n<=1) ? 1 : (fib((n-2))+fib((n-1))));
-}
+};
 #+END_SRC javascript
 
 * What's missing?
