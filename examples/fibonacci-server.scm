@@ -37,25 +37,21 @@
       (gs:compile js-fibonacci)
     js))
 
-(define (js-handler request body)
-  (values (build-response
-           #:headers '((content-type . (application/javascript))))
-          (lambda (port) (display js-script port))))
-
 ;;
 ;; This is the web page.
 ;;
 (define (main-form request body)
-  '(html
+  `(html
+    (@ (xmlns "http://www.w3.org/1999/xhtml"))
     (head (title "Fibonacci GuileScript Server"))
-    (script (@ (src "fibonacci.js")) "// GuileScript Fibonnaci's")
+    (script ,js-script)
     (body
      (input (@ (id "number") (type "text") (size "50") (value "")))
      (button (@ (type "button") (onclick "computeFibonacci()")) "Compute Fibonacci"))))
 
 (define (main-form-handler request body)
   (values (build-response
-           #:headers '((content-type . (text/html))))
+           #:headers '((content-type . (application/xhtml+xml))))
           (lambda (port)
             (sxml->xml (main-form request body) port))))
 
