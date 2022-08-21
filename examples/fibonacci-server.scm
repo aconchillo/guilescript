@@ -4,9 +4,14 @@
 ;; This is a web server implemented in Guile. The web server uses GuileScript to
 ;; generate JavaScript code that will be used in the returned page.
 ;;
-;; Run with: ./env guile examples/fibonacci-server.scm
+;; If you are building from source, run with:
 ;;
-
+;;    ./env guile examples/fibonacci-server.scm
+;;
+;; If GuileScript is already installed, run with:
+;;
+;;    guile examples/fibonacci-server.scm
+;;
 
 (use-modules ((language guilescript compile) #:prefix gs:)
              (ice-9 match)
