@@ -1,8 +1,10 @@
 ;; -*- mode: scheme; coding: utf-8; -*-
 
 ;;
-;; This is a web server implemented in Guile. The web server uses GuileScript to
-;; generate JavaScript code that will be used in the returned page.
+;; This is a web server and a web application written in Guile. The web
+;; application computes a fibonacci number. The web server uses GuileScript to
+;; generate the JavaScript code (that computes a fibonacci number) that will
+;; embedded inline in a <script> tag.
 ;;
 ;; If you are building from source, run with:
 ;;
