@@ -69,9 +69,9 @@
   (split-and-decode-uri-path (uri-path (request-uri request))))
 
 (define (main-handler request body)
-  (match (request-path-components request)
-    (() (main-form-handler request body))
-    (("fibonacci.js") (js-handler request body))
+  (match (cons (request-method request)
+               (request-path-components request))
+    (('GET) (main-form-handler request body))
     (_ (not-found))))
 
 (display "\nNow go to http://127.0.0.1:8080\n")
