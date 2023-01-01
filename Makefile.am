@@ -1,7 +1,7 @@
 #
 # Makefile.am
 #
-# Copyright (C) 2022 Aleix Conchillo Flaque <aconchillo@gmail.com>
+# Copyright (C) 2022-2023 Aleix Conchillo Flaque <aconchillo@gmail.com>
 #
 # This file is part of GuileScript.
 #
@@ -26,9 +26,6 @@ SUBDIRS = \
 dist_bin_SCRIPTS = guilescript
 
 ACLOCAL_AMFLAGS = -I build-aux
-
-dist-hook:
-	$(SHELL) $(top_srcdir)/ChangeLog > $(top_distdir)/ChangeLog
 
 EXTRA_DIST = \
 	examples/binary_search.gs \
