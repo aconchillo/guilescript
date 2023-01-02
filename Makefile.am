@@ -30,7 +30,7 @@ ACLOCAL_AMFLAGS = -I build-aux
 EXTRA_DIST = \
 	examples/binary-search.gs \
 	examples/date.gs \
-	examples/fibonacci-server.gs \
+	examples/fibonacci-server.scm \
 	examples/fibonacci.gs \
 	examples/halve.gs \
 	examples/macro-add1.gs \
