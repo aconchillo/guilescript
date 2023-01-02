@@ -1,6 +1,8 @@
 
 * What is GuileScript?
 
+[[https://github.com/aconchillo/guilescript/actions/workflows/guile2.2.yml][https://github.com/aconchillo/guilescript/actions/workflows/guile3.0.yml/badge.svg]]
+
 GuileScript is currently a toy compiler that aims to compile [[https://www.gnu.org/software/guile/][Guile]] to
 JavaScript. It currently doesn't do much, but it might in the future.
 

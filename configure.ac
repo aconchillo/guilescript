@@ -1,7 +1,7 @@
 #
 # configure.ac
 #
-# Copyright (C) 2022 Aleix Conchillo Flaque <aconchillo@gmail.com>
+# Copyright (C) 2022-2023 Aleix Conchillo Flaque <aconchillo@gmail.com>
 #
 # This file is part of GuileScript.
 #
@@ -31,7 +31,7 @@ dnl Make sure they are available.
 m4_pattern_forbid([PKG_CHECK_MODULES])
 m4_pattern_forbid([^GUILE_PKG])
 
-dnl Check for Guile 2.x.
+dnl Check for Guile 3.0.
 GUILE_PKG([3.0])
 GUILE_PROGS
 GUILE_SITE_DIR
