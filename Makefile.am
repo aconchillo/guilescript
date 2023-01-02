@@ -28,10 +28,11 @@ dist_bin_SCRIPTS = guilescript
 ACLOCAL_AMFLAGS = -I build-aux
 
 EXTRA_DIST = \
-	examples/binary_search.gs \
+	examples/binary-search.gs \
 	examples/date.gs \
-	examples/fib.gs \
+	examples/fibonacci-server.gs \
+	examples/fibonacci.gs \
 	examples/halve.gs \
-	examples/macro_add1.gs \
-	examples/macro_when.gs \
-	examples/vector_reverse.gs
+	examples/macro-add1.gs \
+	examples/macro-when.gs \
+	examples/vector-reverse.gs
