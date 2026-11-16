@@ -1,4 +1,41 @@
 
+* Next version (unreleased)
+
+  - New code generator: Tree-IL is compiled into a JavaScript AST which is
+    then printed. The output is readable modern JavaScript (const/let,
+    function declarations, arrow functions, if statements) instead of nested
+    immediately invoked functions.
+
+  - GuileScript now explicitly uses JavaScript data and semantics: lists and
+    vectors are arrays, symbols and characters are strings, quoted
+    association lists are objects, hash tables are Maps and conditionals use
+    JavaScript truthiness.
+
+  - Scheme names are converted to camelCase JavaScript names (log-counter =>
+    logCounter, even? => isEven, set-x! => setX). Reserved words are
+    renamed and clashing names are a compilation error.
+
+  - Named let loops, do loops and functions calling themselves in tail
+    position are compiled into while loops.
+
+  - Fix #f (was null), quoted symbols, string escaping, internal definitions
+    (only the first one was kept), case and do.
+
+  - Support optional, rest and keyword arguments and case-lambda. Trailing
+    keyword arguments in calls become an options object.
+
+  - ES modules: js-import imports npm packages (or any module) and
+    define-public/export export definitions.
+
+  - Many more built-in procedures (lists, strings, hash tables...) compiled
+    inline. New js-obj, js-typeof, js-instanceof and js-delete!. js-ref and
+    js-set! accept property paths.
+
+  - Compilation errors and warnings with source locations. New -o option in
+    the guilescript command.
+
+  - Test suite (make check, needs Node.js).
+
 * Version 0.2.0 (Jan 30, 2022)
 
   - Add initial macro support.
