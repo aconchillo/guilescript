@@ -27,9 +27,8 @@ SOURCES = \
 	names.scm \
 	print.scm \
 	primitives.scm \
-	spec.scm \
 	decompile-tree-il.scm \
-	translate.scm
+	spec.scm
 
 GOBJECTS = $(SOURCES:%.scm=%.go)
 

@@ -1,6 +1,6 @@
 ;;; (language guilescript compile) --- GuileScript.
 
-;; Copyright (C) 2022 Aleix Conchillo Flaque <aconchillo@gmail.com>
+;; Copyright (C) 2022-2026 Aleix Conchillo Flaque <aconchillo@gmail.com>
 ;;
 ;; This file is part of GuileScript.
 ;;
@@ -25,6 +25,7 @@
 
 (define-module (language guilescript compile)
   #:use-module ((system base compile) #:prefix system:)
+  #:use-module (language javascript errors)
   #:export (compile compile-file))
 
 (define (compile exp)
@@ -33,8 +34,9 @@
    #:from 'tree-il #:to 'javascript))
 
 (define (compile-file filename)
-  (call-with-input-file
-      filename
-    (lambda (p)
-      (let ((tree-il (system:read-and-compile p #:from 'guilescript #:to 'tree-il)))
-        (system:decompile tree-il #:from 'tree-il #:to 'javascript)))))
+  (call-with-source-file filename
+    (lambda ()
+      (call-with-input-file filename
+        (lambda (p)
+          (let ((tree-il (system:read-and-compile p #:from 'guilescript #:to 'tree-il)))
+            (system:decompile tree-il #:from 'tree-il #:to 'javascript)))))))

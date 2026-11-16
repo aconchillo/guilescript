@@ -6,4 +6,4 @@
 (define today (js-new Date))
 
 (console-log today)
-(console-log (js-invoke today getFullYear))
+(console-log (js-invoke today 'getFullYear))

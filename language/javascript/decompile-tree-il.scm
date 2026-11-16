@@ -1,6 +1,6 @@
 ;;; (language javascript decompile-tree-il) --- GuileScript.
 
-;; Copyright (C) 2022 Aleix Conchillo Flaque <aconchillo@gmail.com>
+;; Copyright (C) 2022-2026 Aleix Conchillo Flaque <aconchillo@gmail.com>
 ;;
 ;; This file is part of GuileScript.
 ;;
@@ -19,507 +19,1256 @@
 
 ;;; Commentary:
 
-;; Tree-IL to JavaScript decompiler
+;; Tree-IL to JavaScript compiler.
+;;
+;; Tree-IL is compiled into a small JavaScript AST (see (language javascript
+;; print)) which is then printed. Every Tree-IL expression is compiled
+;; either as a statement, in a context that says what to do with its value,
+;; or as a value (a JavaScript expression):
+;;
+;;   compile-stmt X CTX ACC   emits statements into the accumulator ACC
+;;   compile-value X ACC      returns an expression, but might first emit
+;;                            statements into ACC (e.g. variable bindings)
+;;
+;; Statement contexts:
+;;
+;;   return             the value is returned from the current function
+;;   effect             the value is ignored
+;;   (assign . NAME)    the value is assigned to the variable NAME
+;;   (LOOP . CTX)       tail position of a loop body: calls to the loop
+;;                      become "continue" and values are delivered to CTX
+;;
+;; Functions that only call themselves in tail position (including named
+;; let loops) are compiled into while loops, so they don't grow the stack.
 
 ;;; Code:
 
 (define-module (language javascript decompile-tree-il)
-  #:use-module (ice-9 format)
-  #:use-module (ice-9 receive)
-  #:use-module (ice-9 textual-ports)
-  #:use-module (ice-9 vlist)
+  #:use-module (ice-9 control)
+  #:use-module (ice-9 match)
   #:use-module (language tree-il)
+  #:use-module (language javascript errors)
+  #:use-module (language javascript names)
+  #:use-module (language javascript primitives)
+  #:use-module (language javascript print)
   #:use-module (srfi srfi-1)
+  #:use-module (srfi srfi-9)
+  #:use-module (srfi srfi-11)
   #:use-module (srfi srfi-26)
-  #:use-module (srfi srfi-43)
-  #:use-module (language javascript translate)
-  #:use-module (system base syntax)
-  #:export (decompile-tree-il))
+  #:export (decompile-tree-il
+            compile-program))
 
-(define (decompile-tree-il e env opts)
-  (apply do-decompile e env opts))
+(define (decompile-tree-il x env opts)
+  (values (print-js (compile-program x)) env))
 
-(define* (do-decompile e env
-                       #:key
-                       (use-derived-syntax? #t)
-                       (use-case? #t)
-                       (strip-numeric-suffixes? #f)
-                       #:allow-other-keys)
+;;
+;; Compilation unit state
+;;
 
-  (receive (output-name-table occurrence-count-table)
-      (choose-output-names e use-derived-syntax? strip-numeric-suffixes?)
+(define-record-type <unit>
+  (make-unit defined assigned exports imported js-names lexical-assigned
+             inline-loops emitted gensym-names scopes form-scope)
+  unit?
+  (defined unit-defined)                ; name -> number of definitions
+  (assigned unit-assigned)              ; name -> #t if set!
+  (exports unit-exports set-unit-exports!)
+  (imported unit-imported)              ; name -> #t
+  (js-names unit-js-names)              ; JS name -> top-level name
+  (lexical-assigned unit-lexical-assigned) ; gensym -> #t if set!
+  (inline-loops unit-inline-loops)      ; letrec -> boolean (memoized)
+  (emitted unit-emitted)                ; name -> #t once defined
+  (gensym-names unit-gensym-names)      ; gensym -> JS name
+  (scopes unit-scopes set-unit-scopes!) ; one table per function scope
+  ;; Variables declared at the top level by the current top-level form. The
+  ;; last table in scopes has all the variables declared at the top level.
+  (form-scope unit-form-scope set-unit-form-scope!))
 
-    (define (output-name s)
-      (hashq-ref output-name-table s))
+(define current-unit (make-parameter #f))
 
-    (define (build-indent-string port level)
-      (put-string port (format #f "~v_" (* 2 level))))
+(define (new-unit)
+  (make-unit (make-hash-table) (make-hash-table) '() (make-hash-table)
+             (make-hash-table) (make-hash-table) (make-hash-table)
+             (make-hash-table) (make-hash-table) (list (make-hash-table))
+             (make-hash-table)))
 
-    (define (wrap-with-return body context indent port)
-      (when (and (eq? context 'return) (not (seq? body)))
-        (build-indent-string port indent)
-        (put-string port "return "))
-      (recurse body context indent port)
-      (when (and (not (seq? body)) (or (eq? context 'return) (call? body)))
-        (put-string port ";\n")))
+(define (user-defined? name)
+  (let ((unit (current-unit)))
+    (or (hashq-ref (unit-defined unit) name #f)
+        (hashq-ref (unit-imported unit) name #f))))
 
-    (define (build-vector exp port)
-      (put-string port "[")
-      (vector-for-each
-       (lambda (i v)
-         (build-const v 0 port)
-         (when (< i (- (vector-length exp) 1))
-           (put-char port #\,)))
-       exp)
-      (put-string port "]"))
+(define (lexical-assigned? gensym)
+  (hashq-ref (unit-lexical-assigned (current-unit)) gensym #f))
 
-    (define (build-object exp indent port)
-      (put-string port "{\n")
-      (for-each
-       (lambda (entry)
-         (build-indent-string port (+ indent 1))
-         (build-const (car entry) (+ indent 1) port)
-         (put-string port " : ")
-         (build-const (cdr entry) (+ indent 1) port)
-         (put-string port ",\n"))
-       exp)
-      (build-indent-string port indent)
-      (put-string port "}"))
+(define (binding-kind gensym)
+  (if (lexical-assigned? gensym) "let" "const"))
 
-    (define (build-const exp indent port)
-      (cond
-       ((nil? exp) (put-string port "null"))
-       ((number? exp) (format port "~a" (if (integer? exp) exp (exact->inexact exp))))
-       ((string? exp) (format port "\"~a\"" exp))
-       ((symbol? exp) (format port "~a" (symbol->string exp)))
-       ((boolean? exp) (put-string port (if exp "true" "false")))
-       ((vector? exp) (build-vector exp port))
-       ((pair? exp) (build-object exp indent port))))
+;;
+;; Statement accumulators
+;;
 
-    (define (build-call proc args indent port)
-      (translate-call proc args recurse output-name port))
+(define (new-acc) (list 'acc))
+(define (emit! acc stmt) (set-cdr! acc (cons stmt (cdr acc))))
+(define (emit-all! acc stmts) (for-each (cut emit! acc <>) stmts))
+(define (acc-stmts acc) (reverse (cdr acc)))
+(define (acc-empty? acc) (null? (cdr acc)))
 
-    (define (build-define name exp indent port)
-      (unless (primcall? exp)
-        (format port "var ~a = " (symbol->string name))
-        (recurse exp 'statement indent port)
-        (put-string port ";\n")))
+;;
+;; Names
+;;
 
-    (define (build-set name exp indent port)
-      (format port "~a = " (symbol->string name))
-      (recurse exp 'statement indent port)
-      (put-string port ";\n"))
+(define (toplevel-js-name name)
+  (let ((s (symbol->string name)))
+    (if (js-protected-global? s)
+        s
+        (scheme->js-name name))))
 
-    (define (build-function meta body indent port)
-      (let ((name (assoc-ref meta 'name)))
-        (format port "function ~a" name)
-        (recurse body 'return indent port)))
+(define (toplevel-scope?)
+  (null? (cdr (unit-scopes (current-unit)))))
 
-    (define (build-anonymous-function meta body indent port)
-      (put-string port "(function")
-      (recurse body 'return indent port)
-      (put-string port ")"))
+(define (name-taken? candidate source)
+  (let* ((unit (current-unit))
+         (owner (hash-ref (unit-js-names unit) candidate #f))
+         (scopes (unit-scopes unit)))
+    (or (js-reserved? candidate)
+        (js-protected-global? candidate)
+        ;; Variables at the top level would clash with top-level
+        ;; definitions. Inside functions they can only shadow top-level
+        ;; variables with the same Scheme name.
+        (and owner (or (toplevel-scope?) (not (eq? owner source))))
+        (if (toplevel-scope?)
+            (hash-ref (car scopes) candidate #f)
+            ;; Functions can only see the top-level variables declared by
+            ;; their own top-level form.
+            (or (hash-ref (unit-form-scope unit) candidate #f)
+                (any (cut hash-ref <> candidate #f) (drop-right scopes 1)))))))
 
-    (define (build-lambda meta body indent port)
-      (if (assoc-ref meta 'name)
-          (build-function meta body indent port)
-          (build-anonymous-function meta body indent port)))
+;; Declare a new variable in the current function scope. SOURCE is the
+;; Scheme name (a symbol) or a JavaScript base name (a string).
+(define (declare-name! source)
+  (let ((base (if (string? source) source (scheme->js-name source))))
+    (let lp ((i 0))
+      (let ((candidate (if (zero? i)
+                           base
+                           (string-append base "_" (number->string i)))))
+        (if (name-taken? candidate source)
+            (lp (+ i 1))
+            (let ((unit (current-unit)))
+              (hash-set! (car (unit-scopes unit)) candidate #t)
+              (when (toplevel-scope?)
+                (hash-set! (unit-form-scope unit) candidate #t))
+              candidate))))))
 
-    (define (build-lambda-case req opt rest kw inits gensyms body alternate indent port)
-      (put-string port "(")
-      (put-string port (string-join (map symbol->string req) ","))
-      (put-string port ") {\n")
-      (wrap-with-return body 'return (+ indent 1) port)
-      (build-indent-string port indent)
-      (put-string port "}"))
+(define (fresh-name base)
+  (declare-name! base))
 
-    (define (build-if test consequent indent port)
-      (put-string port "(function () {\n")
-      (build-indent-string port (+ indent 1))
-      (put-string port "if (")
-      (recurse test 'statement 0 port)
-      (put-string port ") {\n")
-      (wrap-with-return consequent 'return (+ indent 2) port)
-      (build-indent-string port (+ indent 1))
-      (put-string port "}\n")
-      (build-indent-string port indent)
-      (put-string port "})()"))
+(define (bind! gensym source)
+  (let ((name (declare-name! source)))
+    (set-gensym-name! gensym name)
+    name))
 
-    (define (build-if-ternary test consequent alternate indent port)
-      (put-string port "(")
-      (recurse test 'statement 0 port)
-      (put-string port " ? ")
-      (recurse consequent 'statement indent port)
-      (put-string port " : ")
-      (recurse alternate 'statement indent port)
-      (put-string port ")"))
+(define (set-gensym-name! gensym name)
+  (hashq-set! (unit-gensym-names (current-unit)) gensym name))
 
-    (define (build-conditional test consequent alternate indent port)
-      (if (void? alternate)
-          (build-if test consequent indent port)
-          (build-if-ternary test consequent alternate indent port)))
+(define (gensym-name gensym)
+  (or (hashq-ref (unit-gensym-names (current-unit)) gensym #f)
+      (compile-error "internal error: unbound variable ~a" gensym)))
 
-    (define (build-seq head tail context indent port)
-      (build-indent-string port indent)
-      (recurse head context indent port)
-      (when (call? head)
-        (put-string port ";\n"))
-      (wrap-with-return tail context indent port))
+(define (call-with-function-scope thunk)
+  (let* ((unit (current-unit))
+         (scopes (unit-scopes unit)))
+    (set-unit-scopes! unit (cons (make-hash-table) scopes))
+    (call-with-values thunk
+      (lambda results
+        (set-unit-scopes! unit scopes)
+        (apply values results)))))
 
-    (define (build-let vars vals body indent port)
-      (put-string port "(function () {\n")
-      (for-each
-       (lambda (var val)
-         (build-indent-string port (+ indent 1))
-         (format port "var ~a = ~a;\n"
-                 var (call-with-output-string (lambda (p) (recurse val 'statement indent p)))))
-       vars vals)
-      (wrap-with-return body 'return (+ indent 1) port)
-      (build-indent-string port indent)
-      (put-string port "})()"))
+;;
+;; Tree-IL helpers
+;;
 
-    (define (build-letrec in-order? vars vals body indent port)
-      (put-string port "(function () {\n")
-      (build-indent-string port (+ indent 1))
-      (build-define (car vars) (car vals) (+ indent 1) port)
-      (wrap-with-return body 'return (+ indent 1) port)
-      (build-indent-string port indent)
-      (put-string port "})()"))
+(define (toplevel-forms x)
+  (if (seq? x)
+      (append (toplevel-forms (seq-head x)) (toplevel-forms (seq-tail x)))
+      (list x)))
 
-    (define (recurse e context indent port)
-      (record-case
-       e
+(define (tree-any pred x)
+  (tree-il-fold (lambda (y found) (or found (pred y)))
+                (lambda (y found) found)
+                #f x))
 
-       ((<void>)
-        (if #f #f))
+(define (references-any? x gensyms)
+  (tree-any (lambda (y)
+              (or (and (lexical-ref? y) (memq (lexical-ref-gensym y) gensyms))
+                  (and (lexical-set? y) (memq (lexical-set-gensym y) gensyms))))
+            x))
 
-       ((<const> exp)
-        (build-const exp indent port))
+(define (lexical-ref-to? x gensym)
+  (and (lexical-ref? x) (eq? (lexical-ref-gensym x) gensym)))
 
-       ((<lexical-ref> gensym)
-        (put-string port (symbol->string (output-name gensym))))
+;; A reference to the Guile procedure NAME (not redefined by the user).
+(define (named-ref? x name)
+  (or (and (toplevel-ref? x)
+           (eq? (toplevel-ref-name x) name)
+           (not (user-defined? name)))
+      (and (module-ref? x) (eq? (module-ref-name x) name))))
 
-       ((<lexical-set> gensym exp)
-        (build-set (output-name gensym) exp indent port))
+(define (macro-definition? exp)
+  (and (primcall? exp) (eq? (primcall-name exp) 'make-syntax-transformer)))
 
-       ((<toplevel-ref> name)
-        (put-string port (symbol->string name)))
+(define (keyword-const? x)
+  (and (const? x) (keyword? (const-exp x))))
 
-       ((<toplevel-define> name exp)
-        (build-define name exp indent port))
+;; (export a b) and define-public expand into:
+;;
+;;   (call-with-deferred-observers
+;;     (lambda () (module-export! (current-module) '(a b))))
+(define (export-form-names x)
+  (and (call? x)
+       (named-ref? (call-proc x) 'call-with-deferred-observers)
+       (match (call-args x)
+         (((? lambda? thunk))
+          (let ((clause (lambda-body thunk)))
+            (and (lambda-case? clause)
+                 (let ((body (lambda-case-body clause)))
+                   (and (call? body)
+                        (named-ref? (call-proc body) 'module-export!)
+                        (match (call-args body)
+                          ((_ (? const? names)) (const-exp names))
+                          (_ #f)))))))
+         (_ #f))))
 
-       ((<toplevel-set> name exp)
-        (build-set name exp indent port))
+(define (js-import-form? x)
+  (and (call? x)
+       (toplevel-ref? (call-proc x))
+       (eq? (toplevel-ref-name (call-proc x)) 'js-import)))
 
-       ((<lambda> meta body)
-        (build-lambda meta body indent port))
+;; Calls that throw: (error msg irritant ...), (raise obj).
+(define (throw-call? x)
+  (and (call? x)
+       (or (named-ref? (call-proc x) 'error)
+           (named-ref? (call-proc x) 'raise)
+           (named-ref? (call-proc x) 'raise-exception))))
 
-       ((<lambda-case> req opt rest kw inits gensyms body alternate)
-        (build-lambda-case req opt rest kw inits gensyms body alternate indent port))
+(define (primitive-for x)
+  (cond
+   ((toplevel-ref? x)
+    (let ((name (toplevel-ref-name x)))
+      (and (not (user-defined? name)) (lookup-primitive name))))
+   ((module-ref? x) (lookup-primitive (module-ref-name x)))
+   ((primitive-ref? x) (lookup-primitive (primitive-ref-name x)))
+   (else #f)))
 
-       ((<let> gensyms vals body)
-        (build-let (map output-name gensyms) vals body indent port))
+(define %special-procedures '(apply error raise raise-exception js-import))
 
-       ((<letrec> in-order? gensyms vals body)
-        (build-letrec in-order? (map output-name gensyms) vals body indent port))
+;;
+;; Analysis
+;;
 
-       ((<call> proc args)
-        (build-call proc args indent port))
+(define (import-form-names x)
+  (filter-map (lambda (arg) (and (toplevel-ref? arg) (toplevel-ref-name arg)))
+              (call-args x)))
 
-       ((<seq> head tail)
-        (build-seq head tail context indent port))
+(define (analyze! x)
+  (let ((unit (current-unit)))
+    (for-each
+     (lambda (form)
+       (cond
+        ((toplevel-define? form)
+         (unless (macro-definition? (toplevel-define-exp form))
+           (let ((name (toplevel-define-name form)))
+             (hashq-set! (unit-defined unit) name
+                         (+ 1 (hashq-ref (unit-defined unit) name 0))))))
+        ((js-import-form? form)
+         (for-each (cut hashq-set! (unit-imported unit) <> #t)
+                   (import-form-names form)))))
+     (toplevel-forms x))
+    (for-each
+     (lambda (form)
+       (let ((names (export-form-names form)))
+         (when names
+           (set-unit-exports! unit (append (unit-exports unit) names)))))
+     (toplevel-forms x))
+    ;; Assignments and top-level names.
+    (tree-il-fold
+     (lambda (y seed)
+       (cond
+        ((lexical-set? y)
+         (hashq-set! (unit-lexical-assigned unit) (lexical-set-gensym y) #t))
+        ((toplevel-set? y)
+         (hashq-set! (unit-assigned unit) (toplevel-set-name y) #t)
+         (register-js-name! (toplevel-set-name y)))
+        ((toplevel-define? y)
+         (unless (macro-definition? (toplevel-define-exp y))
+           (register-js-name! (toplevel-define-name y))))
+        ((toplevel-ref? y)
+         (let ((name (toplevel-ref-name y)))
+           (unless (or (primitive-for y)
+                       (and (memq name %special-procedures)
+                            (not (user-defined? name))))
+             (register-js-name! name)
+             (warn-if-guile-procedure! name (tree-il-src y))))))
+       seed)
+     (lambda (y seed) seed)
+     #f x)
+    (for-each (lambda (name)
+                (unless (user-defined? name)
+                  (compile-error "exported name `~a' is not defined" name)))
+              (unit-exports unit))))
 
-       ((<conditional> test consequent alternate)
-        (build-conditional test consequent alternate indent port))
+;; Names that are not defined in the program are JavaScript globals, but
+;; warn about Guile procedures that GuileScript doesn't support (e.g. display).
+(define (warn-if-guile-procedure! name src)
+  (unless (or (user-defined? name)
+              (js-protected-global? (symbol->string name)))
+    (let ((var (module-variable the-root-module name)))
+      (when (and var (variable-bound? var) (procedure? (variable-ref var)))
+        (compile-warning src "`~a' is a Guile procedure not supported by GuileScript, it will be called as a JavaScript global"
+                         name)))))
 
-       ((<primcall> name args)
-        #f)))
+;; Two different Scheme names must not compile to the same JavaScript name.
+(define (register-js-name! name)
+  (let* ((table (unit-js-names (current-unit)))
+         (js (toplevel-js-name name))
+         (owner (hash-ref table js #f)))
+    (cond
+     ((not owner) (hash-set! table js name))
+     ((not (eq? owner name))
+      (compile-error "`~a' and `~a' both compile to the JavaScript name `~a'"
+                     owner name js)))))
 
+;;
+;; Loops
+;;
+;; A target is (lexical . GENSYM) or (toplevel . NAME), the name a function
+;; is bound to.
+
+(define (target-ref? x target)
+  (match target
+    (('lexical . gensym) (lexical-ref-to? x gensym))
+    (('toplevel . name) (and (toplevel-ref? x) (eq? (toplevel-ref-name x) name)))))
+
+(define (target-mentioned? x target)
+  (tree-any (lambda (y)
+              (or (target-ref? y target)
+                  (match target
+                    (('lexical . gensym)
+                     (and (lexical-set? y) (eq? (lexical-set-gensym y) gensym)))
+                    (('toplevel . name)
+                     (and (toplevel-set? y) (eq? (toplevel-set-name y) name))))))
+            x))
+
+;; Number of self tail calls to TARGET in BODY, or #f if TARGET is
+;; referenced in any other way (e.g. non-tail calls, used as a value or
+;; from a nested function).
+(define (count-tail-calls body target nreq)
+  (call/ec
+   (lambda (fail)
+     (define (no-refs! x)
+       (when (target-mentioned? x target)
+         (fail #f)))
+     (let walk ((x body))
+       (cond
+        ((call? x)
+         (if (target-ref? (call-proc x) target)
+             (begin
+               (unless (= (length (call-args x)) nreq)
+                 (fail #f))
+               (for-each no-refs! (call-args x))
+               1)
+             (begin
+               (no-refs! x)
+               0)))
+        ((conditional? x)
+         (no-refs! (conditional-test x))
+         (+ (walk (conditional-consequent x)) (walk (conditional-alternate x))))
+        ((seq? x)
+         (no-refs! (seq-head x))
+         (walk (seq-tail x)))
+        ((let? x)
+         (for-each no-refs! (let-vals x))
+         (walk (let-body x)))
+        ((and (letrec? x) (inline-loop? x))
+         ;; The body of an inlined loop is in tail position.
+         (for-each no-refs! (call-args (letrec-body x)))
+         (walk (lambda-case-body (lambda-body (car (letrec-vals x))))))
+        ((letrec? x)
+         (for-each no-refs! (letrec-vals x))
+         (walk (letrec-body x)))
+        (else
+         (no-refs! x)
+         0))))))
+
+(define (simple-clause? clause)
+  (and (lambda-case? clause)
+       (not (lambda-case-alternate clause))
+       (not (lambda-case-opt clause))
+       (not (lambda-case-rest clause))
+       (not (lambda-case-kw clause))))
+
+;; A named let (or a single internal function only called right away) whose
+;; function only calls itself in tail position:
+;;
+;;   (letrec ((loop (lambda (i ...) body))) (loop init ...))
+(define (inline-loop? x)
+  (let ((memo (unit-inline-loops (current-unit))))
+    (match (hashq-ref memo x 'unknown)
+      ('unknown
+       (let ((result (compute-inline-loop? x)))
+         (hashq-set! memo x result)
+         result))
+      (result result))))
+
+(define (compute-inline-loop? x)
+  (match (list (letrec-gensyms x) (letrec-vals x) (letrec-body x))
+    (((gensym) ((? lambda? f)) (? call? body))
+     (let ((clause (lambda-body f)))
+       (and (simple-clause? clause)
+            (lexical-ref-to? (call-proc body) gensym)
+            (not (lexical-assigned? gensym))
+            (= (length (call-args body)) (length (lambda-case-req clause)))
+            (not (any (cut references-any? <> (list gensym)) (call-args body)))
+            (count-tail-calls (lambda-case-body clause)
+                              `(lexical . ,gensym)
+                              (length (lambda-case-req clause)))
+            #t)))
+    (_ #f)))
+
+;; The direct subexpressions of X.
+(define (children x)
+  (cond
+   ((call? x) (cons (call-proc x) (call-args x)))
+   ((primcall? x) (primcall-args x))
+   ((conditional? x)
+    (list (conditional-test x) (conditional-consequent x) (conditional-alternate x)))
+   ((seq? x) (list (seq-head x) (seq-tail x)))
+   ((let? x) (append (let-vals x) (list (let-body x))))
+   ((letrec? x) (append (letrec-vals x) (list (letrec-body x))))
+   ((fix? x) (append (fix-vals x) (list (fix-body x))))
+   ((lambda? x) (if (lambda-body x) (list (lambda-body x)) '()))
+   ((lambda-case? x)
+    (append (lambda-case-inits x)
+            (list (lambda-case-body x))
+            (if (lambda-case-alternate x) (list (lambda-case-alternate x)) '())))
+   ((lexical-set? x) (list (lexical-set-exp x)))
+   ((toplevel-set? x) (list (toplevel-set-exp x)))
+   ((toplevel-define? x) (list (toplevel-define-exp x)))
+   ((module-set? x) (list (module-set-exp x)))
+   ((let-values? x) (list (let-values-exp x) (let-values-body x)))
+   ((prompt? x) (list (prompt-tag x) (prompt-body x) (prompt-handler x)))
+   ((abort? x) (append (list (abort-tag x)) (abort-args x) (list (abort-tail x))))
+   (else '())))
+
+;; Does any function inside BODY capture one of GENSYMS? If so, loop
+;; variables need a fresh binding on each iteration. Inlined loops are not
+;; functions.
+(define (captures-any? body gensyms)
+  (let walk ((x body))
+    (cond
+     ((lambda? x) (references-any? x gensyms))
+     ((and (letrec? x) (inline-loop? x))
+      (or (any walk (call-args (letrec-body x)))
+          (walk (lambda-case-body (lambda-body (car (letrec-vals x)))))))
+     (else (any walk (children x))))))
+
+(define-record-type <loop>
+  (make-loop target vars label)
+  loop?
+  (target loop-target)
+  (vars loop-vars)                      ; JavaScript loop variables
+  (label loop-label))                   ; (NAME . USED?)
+
+;;
+;; Contexts
+;;
+
+(define (loop-ctx? ctx) (and (pair? ctx) (loop? (car ctx))))
+
+(define (ctx-loops ctx)
+  (if (loop-ctx? ctx) (cons (car ctx) (ctx-loops (cdr ctx))) '()))
+
+(define (ctx-base ctx)
+  (if (loop-ctx? ctx) (ctx-base (cdr ctx)) ctx))
+
+;; break/continue LOOP from within CTX.
+(define (loop-jump kind loop ctx)
+  (if (eq? loop (car (ctx-loops ctx)))
+      (list kind #f)
+      (let ((label (loop-label loop)))
+        (set-cdr! label #t)
+        (list kind (car label)))))
+
+(define (find-loop ctx proc)
+  (find (lambda (loop) (target-ref? proc (loop-target loop)))
+        (ctx-loops ctx)))
+
+(define (pure-expr? e)
+  (match e
+    ((or ('num _) ('str _) ('bool _) ('null) ('undefined) ('id _)
+         ('arrow . _) ('function . _))
+     #t)
+    (_ #f)))
+
+;; Simple enough to be evaluated more than once or to be evaluated out of
+;; order: literals, variables, functions and property accesses like
+;; Math.max.
+(define (simple-expr? e)
+  (match e
+    (('dot obj _) (simple-expr? obj))
+    (_ (pure-expr? e))))
+
+;; Deliver the value E (#f or (undefined) if unspecified) to CTX.
+(define (deliver! ctx e acc)
+  (let ((e (if (equal? e '(undefined)) #f e))
+        (base (ctx-base ctx))
+        (loops (ctx-loops ctx)))
+    (match base
+      ('return
+       (cond
+        (e (emit! acc `(return ,e)))
+        ((pair? loops) (emit! acc '(return #f)))))
+      ('effect
+       (when (and e (not (pure-expr? e)))
+         (emit! acc `(expr-stmt ,e))))
+      (('assign . name)
+       (when e
+         (emit! acc `(expr-stmt (assign (id ,name) ,e))))))
+    (when (and (pair? loops) (not (eq? base 'return)))
+      (emit! acc (loop-jump 'break (last loops) ctx)))))
+
+(define (hoist! e acc)
+  (let ((t (fresh-name "t")))
+    (emit! acc `(decl "const" ,t ,e))
+    `(id ,t)))
+
+;;
+;; Programs
+;;
+
+(define (compile-program x)
+  (parameterize ((current-unit (new-unit)))
+    (reset-location!)
+    (analyze! x)
+    (let ((acc (new-acc))
+          (unit (current-unit)))
+      (for-each (cut compile-toplevel <> acc) (toplevel-forms x))
+      (let ((reexports (filter (lambda (name)
+                                 (not (hashq-ref (unit-defined unit) name #f)))
+                               (delete-duplicates (unit-exports unit)))))
+        (unless (null? reexports)
+          (emit! acc `(export-names ,(map toplevel-js-name reexports)))))
+      (acc-stmts acc))))
+
+;; The first location in the user's file found in X (macro expansions might
+;; not have one at the top).
+(define (first-user-location x)
+  (tree-il-fold (lambda (y found)
+                  (or found
+                      (and (user-location? (tree-il-src y)) (tree-il-src y))))
+                (lambda (y found) found)
+                #f x))
+
+(define (compile-toplevel x acc)
+  (set-unit-form-scope! (current-unit) (make-hash-table))
+  (note-location! (first-user-location x))
+  (cond
+   ((toplevel-define? x) (compile-definition x acc))
+   ((export-form-names x) #t)
+   ((js-import-form? x) (emit! acc (compile-import x)))
+   (else (compile-stmt x 'effect acc))))
+
+(define (compile-definition x acc)
+  (let* ((unit (current-unit))
+         (name (toplevel-define-name x))
+         (exp (toplevel-define-exp x))
+         (js (toplevel-js-name name))
+         (export? (memq name (unit-exports unit)))
+         (mutable? (or (> (hashq-ref (unit-defined unit) name 0) 1)
+                       (hashq-ref (unit-assigned unit) name #f)))
+         (wrap (lambda (stmt) (if export? `(export ,stmt) stmt))))
+    (cond
+     ((macro-definition? exp) #t)
+     ((hashq-ref (unit-emitted unit) name #f)
+      ;; A redefinition is just an assignment.
+      (compile-assignment! js exp acc))
+     (else
+      (hashq-set! (unit-emitted unit) name #t)
+      (if (and (lambda? exp) (not mutable?))
+          (emit! acc (wrap (compile-function-declaration js exp `(toplevel . ,name))))
+          (compile-declaration! (if mutable? "let" "const") js exp acc wrap))))))
+
+;; (js-import "module" [#:default Name] [#:as Name] name ...)
+(define (compile-import x)
+  (match (call-args x)
+    (((? const? from) . args)
+     (unless (string? (const-exp from))
+       (compile-error "js-import expects a module name string"))
+     (let lp ((args args) (default #f) (namespace #f) (names '()))
+       (match args
+         (()
+          (when (and namespace (pair? names))
+            (compile-error "js-import can't combine #:as with named imports"))
+          `(import ,(const-exp from) ,default ,namespace ,(reverse names)))
+         (((? keyword-const? kw) (? toplevel-ref? ref) . rest)
+          (let ((js (toplevel-js-name (toplevel-ref-name ref))))
+            (match (const-exp kw)
+              (#:default (lp rest js namespace names))
+              (#:as (lp rest default js names))
+              (other (compile-error "unknown js-import option ~s" other)))))
+         (((? toplevel-ref? ref) . rest)
+          (lp rest default namespace
+              (cons (toplevel-js-name (toplevel-ref-name ref)) names)))
+         (_ (compile-error "invalid js-import form")))))
+    (_ (compile-error "js-import expects a module name string"))))
+
+;;
+;; Bindings
+;;
+
+(define* (compile-declaration! kind name x acc #:optional (wrap identity))
+  (if (expression-like? x)
+      (let ((e (compile-value x acc)))
+        (emit! acc (wrap `(decl ,kind ,name ,e))))
+      (begin
+        (emit! acc (wrap `(decl "let" ,name #f)))
+        (compile-stmt x `(assign . ,name) acc))))
+
+(define (compile-assignment! name x acc)
+  (if (expression-like? x)
+      (emit! acc `(expr-stmt (assign (id ,name) ,(compile-value x acc))))
+      (compile-stmt x `(assign . ,name) acc)))
+
+(define (compile-let-bindings! x acc)
+  (for-each (lambda (gensym name val)
+              (compile-declaration! (binding-kind gensym) (bind! gensym name) val acc))
+            (let-gensyms x) (let-names x) (let-vals x)))
+
+(define (compile-letrec-bindings! x acc)
+  (let* ((gensyms (letrec-gensyms x))
+         (names (map-in-order bind! gensyms (letrec-names x))))
+    (for-each (lambda (gensym name val)
+                (if (and (lambda? val) (not (lexical-assigned? gensym)))
+                    (emit! acc (compile-function-declaration name val `(lexical . ,gensym)))
+                    (compile-declaration! (binding-kind gensym) name val acc)))
+              gensyms names (letrec-vals x))))
+
+;; (let ((t A)) (if t t B)) is what (or A B) expands to.
+(define (or-pattern x)
+  (and (let? x)
+       (match (list (let-gensyms x) (let-vals x) (let-body x))
+         (((gensym) (a) (? conditional? body))
+          (and (lexical-ref-to? (conditional-test body) gensym)
+               (lexical-ref-to? (conditional-consequent body) gensym)
+               (not (references-any? (conditional-alternate body) (list gensym)))
+               (not (lexical-assigned? gensym))
+               (cons a (conditional-alternate body))))
+         (_ #f))))
+
+;; Can X be compiled into an expression without needing temporary
+;; variables? This is only used to produce nicer code.
+(define (expression-like? x)
+  (cond
+   ((or (const? x) (void? x) (lexical-ref? x) (toplevel-ref? x)
+        (module-ref? x) (primitive-ref? x) (lambda? x))
+    #t)
+   ((call? x)
+    (and (not (throw-call? x))
+         (expression-like? (call-proc x))
+         (every expression-like? (call-args x))))
+   ((primcall? x) (every expression-like? (primcall-args x)))
+   ((conditional? x)
+    (and (expression-like? (conditional-test x))
+         (expression-like? (conditional-consequent x))
+         (expression-like? (conditional-alternate x))))
+   ((or-pattern x)
+    => (match-lambda ((a . b) (and (expression-like? a) (expression-like? b)))))
+   ((lexical-set? x) (expression-like? (lexical-set-exp x)))
+   ((toplevel-set? x) (expression-like? (toplevel-set-exp x)))
+   (else #f)))
+
+;;
+;; Statements
+;;
+
+(define (unsupported x)
+  (compile-error
+   (cond
+    ((or (prompt? x) (abort? x))
+     "continuations, escape procedures, exception handlers and dynamic-wind are not supported")
+    ((let-values? x) "multiple values are not supported")
+    ((module-set? x) "assigning variables of other modules is not supported")
+    ((toplevel-define? x) "definitions are only allowed at the top level")
+    (else (format #f "unsupported expression ~s" (unparse-tree-il x))))))
+
+(define (compile-stmt x ctx acc)
+  (note-location! (tree-il-src x))
+  (cond
+   ((void? x) (deliver! ctx #f acc))
+   ((seq? x)
+    (compile-stmt (seq-head x) 'effect acc)
+    (compile-stmt (seq-tail x) ctx acc))
+   ((conditional? x) (compile-conditional x ctx acc))
+   ((and (or-pattern x) (null? (ctx-loops ctx)) (expression-like? x))
+    (deliver! ctx (compile-value x acc) acc))
+   ((let? x)
+    (compile-let-bindings! x acc)
+    (compile-stmt (let-body x) ctx acc))
+   ((letrec? x)
+    (if (inline-loop? x)
+        (compile-inline-loop x ctx acc)
+        (begin
+          (compile-letrec-bindings! x acc)
+          (compile-stmt (letrec-body x) ctx acc))))
+   ((call? x) (compile-call-stmt x ctx acc))
+   ((lexical-set? x)
+    (compile-assignment! (gensym-name (lexical-set-gensym x)) (lexical-set-exp x) acc)
+    (deliver! ctx #f acc))
+   ((toplevel-set? x)
+    (compile-assignment! (toplevel-js-name (toplevel-set-name x)) (toplevel-set-exp x) acc)
+    (deliver! ctx #f acc))
+   ((or (prompt? x) (abort? x) (let-values? x) (module-set? x) (toplevel-define? x) (fix? x))
+    (unsupported x))
+   (else (deliver! ctx (compile-value x acc) acc))))
+
+(define (constant-truth x)
+  (and (const? x)
+       (match (const-exp x)
+         (#t 'true)
+         (#f 'false)
+         (_ #f))))
+
+(define (exits? stmt)
+  (match stmt
+    ((or ('return _) ('throw _) ('break _) ('continue _)) #t)
+    (('if _ (? pair? then) (? pair? else))
+     (and (exits? (last then)) (exits? (last else))))
+    (_ #f)))
+
+(define (assign-stmts name e)
+  (if (equal? e '(undefined))
+      '()
+      `((expr-stmt (assign (id ,name) ,e)))))
+
+(define (emit-if! test then else acc)
+  (match (list then else)
+    ((() ())
+     (unless (pure-expr? test)
+       (emit! acc `(expr-stmt ,test))))
+    (((('return (? identity a))) (('return (? identity b))))
+     (emit! acc `(return (ternary ,test ,a ,b))))
+    (((('expr-stmt ('assign ('id n) a))) (('expr-stmt ('assign ('id m) b))))
+     (=> next)
+     (if (string=? n m)
+         (emit! acc `(expr-stmt (assign (id ,n) (ternary ,test ,a ,b))))
+         (next)))
+    ((() _) (emit! acc `(if ,(js-negate test) ,else #f)))
+    ((_ ()) (emit! acc `(if ,test ,then #f)))
+    (_
+     (if (exits? (last then))
+         (begin
+           ;; No need for an else branch if the first branch never falls
+           ;; through.
+           (emit! acc `(if ,test ,then #f))
+           (emit-all! acc else))
+         (emit! acc `(if ,test ,then ,else))))))
+
+(define (compile-conditional x ctx acc)
+  (match (constant-truth (conditional-test x))
+    ('true (compile-stmt (conditional-consequent x) ctx acc))
+    ('false (compile-stmt (conditional-alternate x) ctx acc))
+    (_
+     (let ((test (compile-test (conditional-test x) acc))
+           (then (new-acc))
+           (else (new-acc)))
+       (compile-stmt (conditional-consequent x) ctx then)
+       (compile-stmt (conditional-alternate x) ctx else)
+       (emit-if! test (acc-stmts then) (acc-stmts else) acc)))))
+
+(define (compile-call-stmt x ctx acc)
+  (let ((proc (call-proc x))
+        (args (call-args x)))
+    (cond
+     ((find-loop ctx proc)
+      => (lambda (loop) (compile-loop-continue loop args ctx acc)))
+     ((throw-call? x) (compile-throw x acc))
+     (else (deliver! ctx (compile-value x acc) acc)))))
+
+(define (compile-throw x acc)
+  (let ((args (call-args x)))
+    (if (named-ref? (call-proc x) 'error)
+        (let ((exprs (compile-exprs args acc)))
+          (emit! acc `(throw (new (id "Error")
+                                  ,(match exprs
+                                     (() '(str "error"))
+                                     ((msg) msg)
+                                     (_ `(call (dot (array ,@exprs) "join")
+                                               (str " "))))))))
+        (match (compile-exprs args acc)
+          ((obj) (emit! acc `(throw ,obj)))
+          (_ (compile-error "raise expects one argument"))))))
+
+;;
+;; Loops
+;;
+
+(define (compile-inline-loop x ctx acc)
+  (let* ((gensym (car (letrec-gensyms x)))
+         (clause (lambda-body (car (letrec-vals x))))
+         (req (lambda-case-req clause))
+         (gensyms (lambda-case-gensyms clause))
+         (body (lambda-case-body clause))
+         (inits (call-args (letrec-body x)))
+         (target `(lexical . ,gensym)))
+    (if (zero? (count-tail-calls body target (length req)))
+        ;; The function never calls itself, so it's just a let.
+        (begin
+          (for-each (lambda (gensym name init)
+                      (compile-declaration! (binding-kind gensym) (bind! gensym name) init acc))
+                    gensyms req inits)
+          (compile-stmt body ctx acc))
+        (let* ((init-exprs (compile-exprs inits acc))
+               (vars (map-in-order declare-name! req))
+               (label (cons (declare-name! (car (letrec-names x))) #f))
+               (loop (make-loop target vars label))
+               (body-acc (new-acc)))
+          (for-each (lambda (var e) (emit! acc `(decl "let" ,var ,e))) vars init-exprs)
+          (bind-loop-variables! gensyms req vars body body-acc)
+          (compile-stmt body (cons loop ctx) body-acc)
+          (emit! acc `(while ,label ,(loop-body (acc-stmts body-acc))))))))
+
+;; Loop variables are reassigned on each iteration. If they are captured by
+;; a closure we need a fresh binding per iteration (like Scheme does).
+(define (bind-loop-variables! gensyms names vars body acc)
+  (if (captures-any? body gensyms)
+      (for-each (lambda (gensym name var)
+                  (emit! acc `(decl ,(binding-kind gensym) ,(bind! gensym name) (id ,var))))
+                gensyms names vars)
+      (for-each set-gensym-name! gensyms vars)))
+
+(define (js-mentions? e name)
+  (let walk ((e e))
+    (cond
+     ((and (pair? e) (eq? (car e) 'id) (pair? (cdr e)) (equal? (cadr e) name)) #t)
+     ((pair? e) (or (walk (car e)) (walk (cdr e))))
+     (else #f))))
+
+(define (compile-loop-continue loop args ctx acc)
+  (let* ((exprs (compile-exprs args acc))
+         (changes (filter-map (lambda (var e)
+                                (and (not (equal? e `(id ,var))) (cons var e)))
+                              (loop-vars loop) exprs)))
+    (emit-parallel-assignments! changes acc)
+    (emit! acc (loop-jump 'continue loop ctx))))
+
+;; Assign all the (VAR . VALUE) pairs as if it was done in parallel. A
+;; variable can be assigned once no other pending value refers to it. If
+;; there's a cycle, the old value of a variable is saved in a temporary.
+(define (emit-parallel-assignments! changes acc)
+  (let lp ((pending changes))
+    (unless (null? pending)
+      (let ((ready (find (lambda (change)
+                           (not (any (lambda (other)
+                                       (and (not (eq? other change))
+                                            (js-mentions? (cdr other) (car change))))
+                                     pending)))
+                         pending)))
+        (if ready
+            (begin
+              (emit! acc `(expr-stmt (assign (id ,(car ready)) ,(cdr ready))))
+              (lp (delete ready pending eq?)))
+            (let* ((var (car (car pending)))
+                   (old (hoist! `(id ,var) acc)))
+              (lp (map (lambda (change)
+                         (if (eq? change (car pending))
+                             change
+                             (cons (car change)
+                                   (substitute (cdr change) `((,var . ,old))))))
+                       pending))))))))
+
+;; A while loop body, without a redundant continue at the end.
+(define (loop-body stmts)
+  (if (and (pair? stmts) (equal? (last stmts) '(continue #f)))
+      (drop-right stmts 1)
+      stmts))
+
+;;
+;; Functions
+;;
+
+(define (compile-function-declaration name x target)
+  (let-values (((params body) (compile-lambda x target)))
+    `(fun-decl ,name ,params ,body)))
+
+(define (compile-lambda-expression x)
+  (let-values (((params body) (compile-lambda x #f)))
+    `(arrow ,params ,body)))
+
+;; Returns the parameters and the body statements of a function.
+(define (compile-lambda x target)
+  (call-with-function-scope
+   (lambda ()
+     (let ((clause (lambda-body x)))
+       (cond
+        ((not (lambda-case? clause))
+         (values '() '((throw (new (id "Error") (str "wrong number of arguments"))))))
+        ((lambda-case-alternate clause) (compile-case-lambda clause))
+        (else (compile-clause clause target)))))))
+
+(define (compile-default init)
+  (if (and (const? init) (eq? (const-exp init) #f))
+      #f
+      (let* ((acc (new-acc))
+             (e (compile-value init acc)))
+        (if (acc-empty? acc)
+            e
+            `(call (arrow () ,(append (acc-stmts acc) `((return ,e)))))))))
+
+(define (compile-clause clause target)
+  (let* ((req (lambda-case-req clause))
+         (opt (or (lambda-case-opt clause) '()))
+         (rest (lambda-case-rest clause))
+         (kw (match (lambda-case-kw clause) (#f '()) ((_ . entries) entries)))
+         (gensyms (lambda-case-gensyms clause))
+         (nreq (length req))
+         (nopt (length opt))
+         (req-gensyms (take gensyms nreq))
+         (opt-gensyms (take (drop gensyms nreq) nopt))
+         (rest-gensym (and rest (list-ref gensyms (+ nreq nopt))))
+         (inits (lambda-case-inits clause))
+         (body (lambda-case-body clause))
+         (acc (new-acc)))
+    (when (and (pair? opt) (pair? kw))
+      (compile-error "#:optional and #:key arguments can't be combined"))
+    (when (and rest (pair? kw))
+      (compile-error "rest and #:key arguments can't be combined"))
+    (if (and target
+             (simple-clause? clause)
+             (positive? (or (count-tail-calls body target nreq) 0)))
+        ;; A function that calls itself in tail position: a loop.
+        (let* ((vars (map-in-order declare-name! req))
+               (label (cons (declare-name! (match target
+                                             (('toplevel . name) name)
+                                             (('lexical . _) "loop")))
+                            #f))
+               (loop (make-loop target vars label))
+               (body-acc (new-acc)))
+          (bind-loop-variables! req-gensyms req vars body body-acc)
+          (compile-stmt body (cons loop 'return) body-acc)
+          (values (map (lambda (var) `(param ,var)) vars)
+                  `((while ,label ,(loop-body (acc-stmts body-acc))))))
+        (let* ((req-params (map-in-order (lambda (gensym name) `(param ,(bind! gensym name)))
+                                         req-gensyms req))
+               (opt-params (map-in-order (lambda (gensym name init)
+                                  (let ((default (compile-default init)))
+                                    (if default
+                                        `(param ,(bind! gensym name) ,default)
+                                        `(param ,(bind! gensym name)))))
+                                opt-gensyms opt (take inits nopt)))
+               (rest-params (if rest `((rest ,(bind! rest-gensym rest))) '()))
+               (kw-params (if (null? kw)
+                              '()
+                              `((options
+                                 ,(map-in-order (match-lambda*
+                                         (((keyword name gensym) init)
+                                          (let ((default (compile-default init)))
+                                            (list (keyword->js-name keyword)
+                                                  (bind! gensym name)
+                                                  default))))
+                                       kw (drop inits nopt)))))))
+          (compile-stmt body 'return acc)
+          (values (append req-params opt-params rest-params kw-params)
+                  (acc-stmts acc))))))
+
+;; case-lambda: dispatch on the number of arguments.
+(define (compile-case-lambda clause)
+  (let ((args (fresh-name "args")))
+    (define (compile-branch clause)
+      (when (or (lambda-case-opt clause) (lambda-case-kw clause))
+        (compile-error "case-lambda clauses with #:optional or #:key arguments are not supported"))
+      (let* ((req (lambda-case-req clause))
+             (n (length req))
+             (rest (lambda-case-rest clause))
+             (gensyms (lambda-case-gensyms clause))
+             (acc (new-acc)))
+        (for-each (lambda (gensym name i)
+                    (emit! acc `(decl ,(binding-kind gensym) ,(bind! gensym name)
+                                      (index (id ,args) (num ,i)))))
+                  (take gensyms n) req (iota n))
+        (when rest
+          (let ((gensym (list-ref gensyms n)))
+            (emit! acc `(decl ,(binding-kind gensym) ,(bind! gensym rest)
+                              (call (dot (id ,args) "slice") (num ,n))))))
+        (compile-stmt (lambda-case-body clause) 'return acc)
+        (cons `(binop ,(if rest ">=" "===") (dot (id ,args) "length") (num ,n))
+              (acc-stmts acc))))
     (values
-     (call-with-output-string
-       (lambda (p)
-         (recurse e 'statement 0 p)
-         (put-string p "\n")))
-     env)))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;
-;; Algorithm for choosing better variable names
-;; ============================================
-;;
-;; This was copied from:
-;;
-;;  https://git.savannah.gnu.org/cgit/guile.git/tree/module/language/scheme/decompile-tree-il.scm
+     `((rest ,args))
+     (list
+      (let lp ((clause clause))
+        (if clause
+            (match (compile-branch clause)
+              ((test . stmts)
+               `(if ,test ,stmts ,(list (lp (lambda-case-alternate clause))))))
+            '(throw (new (id "Error") (str "wrong number of arguments")))))))))
 
 ;;
-;; 'choose-output-names' analyzes the top-level form e, chooses good
-;; variable names that are as close as possible to the source names,
-;; and returns two values:
+;; Values
 ;;
-;;  * a hash table mapping gensym to output name
-;;  * a hash table mapping gensym to number of occurrences
+
+(define (compile-constant v)
+  (define (key-string k)
+    (cond
+     ((symbol? k) (symbol->string k))
+     ((string? k) k)
+     ((keyword? k) (keyword->js-name k))))
+  (define (object-alist? v)
+    (and (pair? v) (list? v)
+         (every (lambda (entry)
+                  (and (pair? entry)
+                       (or (symbol? (car entry)) (string? (car entry)) (keyword? (car entry)))
+                       (not (pair? (cdr entry)))
+                       (not (null? (cdr entry)))))
+                v)))
+  (cond
+   ((eq? v #t) '(bool #t))
+   ((eq? v #f) '(bool #f))
+   ((eq? v #nil) '(null))
+   ((null? v) '(array))
+   ((unspecified? v) '(undefined))
+   ((and (number? v) (real? v)) `(num ,v))
+   ((string? v) `(str ,v))
+   ((char? v) `(str ,(string v)))
+   ((symbol? v) `(str ,(symbol->string v)))
+   ((keyword? v) `(str ,(symbol->string (keyword->symbol v))))
+   ((vector? v) `(array ,@(map compile-constant (vector->list v))))
+   ((object-alist? v)
+    `(object ,@(map (lambda (entry)
+                      (cons (key-string (car entry)) (compile-constant (cdr entry))))
+                    v)))
+   ((list? v) `(array ,@(map compile-constant v)))
+   ((pair? v)
+    (compile-error "the pair ~s has no JavaScript equivalent (use a list, a quoted association list or js-obj)" v))
+   (else (compile-error "unsupported constant ~s" v))))
+
+(define (primitive-value prim)
+  (cond
+   ((primitive-value-builder prim)
+    => (lambda (build) (call-with-function-scope (lambda () (build fresh-name)))))
+   (else
+    (call-with-function-scope
+     (lambda ()
+       (let* ((params (map-in-order (lambda (_) (fresh-name "x"))
+                                    (iota (primitive-min-args prim))))
+              (args (map (lambda (p) `(id ,p)) params)))
+         `(arrow ,(map (lambda (p) `(param ,p)) params)
+                 ((return ,((primitive-compiler prim) args (map (const #f) params)
+                            fresh-name))))))))))
+
+(define (toplevel-value x)
+  (let ((name (toplevel-ref-name x)))
+    (cond
+     ((primitive-for x) => primitive-value)
+     ((and (memq name %special-procedures) (not (user-defined? name)))
+      (compile-error "`~a' can only be called, it can't be used as a value" name))
+     (else `(id ,(toplevel-js-name name))))))
+
+(define (compile-value x acc)
+  (note-location! (tree-il-src x))
+  (cond
+   ((const? x) (compile-constant (const-exp x)))
+   ((void? x) '(undefined))
+   ((lexical-ref? x) `(id ,(gensym-name (lexical-ref-gensym x))))
+   ((toplevel-ref? x) (toplevel-value x))
+   ((or (module-ref? x) (primitive-ref? x))
+    (let ((prim (primitive-for x)))
+      (if prim
+          (primitive-value prim)
+          (compile-error "`~a' is not supported by GuileScript"
+                         (if (module-ref? x) (module-ref-name x) (primitive-ref-name x))))))
+   ((lambda? x) (compile-lambda-expression x))
+   ((call? x) (compile-call-value x acc))
+   ((primcall? x)
+    (let ((prim (lookup-primitive (primcall-name x))))
+      (unless prim
+        (compile-error "`~a' is not supported by GuileScript" (primcall-name x)))
+      (compile-primitive-call prim (primcall-args x) acc)))
+   ((lexical-set? x)
+    `(assign (id ,(gensym-name (lexical-set-gensym x)))
+             ,(compile-value (lexical-set-exp x) acc)))
+   ((toplevel-set? x)
+    `(assign (id ,(toplevel-js-name (toplevel-set-name x)))
+             ,(compile-value (toplevel-set-exp x) acc)))
+   ((seq? x)
+    (compile-stmt (seq-head x) 'effect acc)
+    (compile-value (seq-tail x) acc))
+   ((conditional? x) (compile-conditional-value x acc))
+   ((or-pattern x) => (lambda (pattern) (compile-or pattern acc)))
+   ((let? x)
+    (compile-let-bindings! x acc)
+    (compile-value (let-body x) acc))
+   ((and (letrec? x) (not (inline-loop? x)))
+    (compile-letrec-bindings! x acc)
+    (compile-value (letrec-body x) acc))
+   ((or (prompt? x) (abort? x) (let-values? x) (module-set? x) (toplevel-define? x) (fix? x))
+    (unsupported x))
+   (else
+    ;; Anything else needs statements (e.g. loops): use a temporary.
+    (let ((t (fresh-name "t")))
+      (emit! acc `(decl "let" ,t #f))
+      (compile-stmt x `(assign . ,t) acc)
+      `(id ,t)))))
+
+;; Compile expressions left to right. If an expression needs statements, the
+;; previous (non-simple) expressions are evaluated first into temporaries to
+;; keep the evaluation order.
+(define (compile-exprs xs acc)
+  (let lp ((xs xs) (done '()))
+    (if (null? xs)
+        (reverse done)
+        (let* ((sub (new-acc))
+               (e (compile-value (car xs) sub)))
+          (if (acc-empty? sub)
+              (lp (cdr xs) (cons e done))
+              (let ((done (reverse
+                           (map (lambda (d) (if (simple-expr? d) d (hoist! d acc)))
+                                (reverse done)))))
+                (emit-all! acc (acc-stmts sub))
+                (lp (cdr xs) (cons e done))))))))
+
+;; The value of a test, where only its truthiness matters.
+(define (compile-test x acc)
+  (cond
+   ;; (and a b) => (if a b #f)
+   ((and (conditional? x) (eq? (constant-truth (conditional-alternate x)) 'false))
+    (let* ((a (compile-test (conditional-test x) acc))
+           (sub (new-acc))
+           (b (compile-test (conditional-consequent x) sub)))
+      (if (acc-empty? sub)
+          `(binop "&&" ,a ,b)
+          (compile-value x acc))))
+   (else (compile-value x acc))))
+
+(define (compile-or pattern acc)
+  (match pattern
+    ((a-x . b-x)
+     (let* ((a (compile-test a-x acc))
+            (sub (new-acc))
+            (b (compile-value b-x sub)))
+       (if (acc-empty? sub)
+           `(binop "||" ,a ,b)
+           (let ((a (if (simple-expr? a) a (hoist! a acc)))
+                 (t (fresh-name "t")))
+             (emit! acc `(decl "let" ,t #f))
+             (emit-if! a (assign-stmts t a) (append (acc-stmts sub) (assign-stmts t b)) acc)
+             `(id ,t)))))))
+
+(define (compile-conditional-value x acc)
+  (match (constant-truth (conditional-test x))
+    ('true (compile-value (conditional-consequent x) acc))
+    ('false (compile-value (conditional-alternate x) acc))
+    (_
+     (let* ((test (compile-test (conditional-test x) acc))
+            (then-acc (new-acc))
+            (else-acc (new-acc))
+            (then (compile-value (conditional-consequent x) then-acc))
+            (else (compile-value (conditional-alternate x) else-acc)))
+       (if (and (acc-empty? then-acc) (acc-empty? else-acc))
+           `(ternary ,test ,then ,else)
+           (let ((t (fresh-name "t")))
+             (emit! acc `(decl "let" ,t #f))
+             (emit-if! test
+                       (append (acc-stmts then-acc) (assign-stmts t then))
+                       (append (acc-stmts else-acc) (assign-stmts t else))
+                       acc)
+             `(id ,t)))))))
+
 ;;
-(define choose-output-names
-  (let ()
-    (define primitive?
-      ;; This is a list of primitives that 'tree-il->scheme' assumes
-      ;; will have the standard bindings when found in operator
-      ;; position.
-      (let* ((primitives '(if quote @ @@ set! define define*
-                              begin let let* letrec letrec*
-                              and or cond case
-                              lambda lambda* case-lambda case-lambda*
-                              apply call-with-values dynamic-wind
-                              with-fluids fluid-ref fluid-set!
-                              call-with-prompt abort memv eqv?))
-             (table (make-hash-table (length primitives))))
-        (for-each (cut hashq-set! table <> #t) primitives)
-        (lambda (name) (hashq-ref table name))))
+;; Calls
+;;
 
-    ;; Repeatedly strip suffix of the form "-N", where N is a string
-    ;; that could be produced by number->string given a positive
-    ;; integer.  In other words, the first digit of N may not be 0.
-    (define compute-base-name
-      (let ((digits (string->char-set "0123456789")))
-        (define (base-name-string str)
-          (let ((i (string-skip-right str digits)))
-            (if (and i (< (1+ i) (string-length str))
-                     (eq? #\- (string-ref str i))
-                     (not (eq? #\0 (string-ref str (1+ i)))))
-                (base-name-string (substring str 0 i))
-                str)))
-        (lambda (sym)
-          (string->symbol (base-name-string (symbol->string sym))))))
+;; Trailing keyword arguments (f a #:key value ...) become an options object:
+;; f(a, { key: value }). Returns the positional arguments and a list of
+;; (KEY . VALUE) pairs.
+(define (split-keyword-args args)
+  (define (keyword-pairs args)
+    (match args
+      (() '())
+      (((? keyword-const? kw) value . rest)
+       (let ((pairs (keyword-pairs rest)))
+         (and pairs (cons (cons (keyword->js-name (const-exp kw)) value) pairs))))
+      (_ #f)))
+  (let lp ((args args) (positional '()))
+    (match args
+      (() (values (reverse positional) '()))
+      (((? keyword-const?) . _)
+       (let ((pairs (keyword-pairs args)))
+         (if pairs
+             (values (reverse positional) pairs)
+             (lp (cdr args) (cons (car args) positional)))))
+      ((arg . rest) (lp rest (cons arg positional))))))
 
-    ;; choose-output-names
-    (lambda (e use-derived-syntax? strip-numeric-suffixes?)
+(define (spread-args exprs)
+  (append (drop-right exprs 1)
+          (match (last exprs)
+            (('array . elts) elts)
+            (e `((spread ,e))))))
 
-      (define lexical-gensyms '())
+(define (compile-call-value x acc)
+  (let ((proc (call-proc x))
+        (args (call-args x)))
+    (cond
+     ((throw-call? x)
+      (compile-throw x acc)
+      '(undefined))
+     ((primitive-for proc)
+      => (lambda (prim) (compile-primitive-call prim args acc)))
+     ((named-ref? proc 'apply) (compile-apply args acc))
+     ((named-ref? proc 'js-import)
+      (compile-error "js-import is only allowed at the top level"))
+     ((and (lexical-ref? proc)
+           (not (hashq-ref (unit-gensym-names (current-unit)) (lexical-ref-gensym proc) #f)))
+      (compile-error "internal error: call to an inlined loop outside of a tail position"))
+     (else
+      (let-values (((positional keywords) (split-keyword-args args)))
+        (match (compile-exprs (append (list proc) positional (map cdr keywords)) acc)
+          ((f . exprs)
+           (let ((n (length positional)))
+             (call-function f
+                            (append
+                             (take exprs n)
+                             (if (null? keywords)
+                                 '()
+                                 `((object ,@(map (lambda (kw e) (cons (car kw) e))
+                                                  keywords (drop exprs n)))))))))))))))
 
-      (define top-level-intern!
-        (let ((table (make-hash-table)))
-          (lambda (name)
-            (let ((h (hashq-create-handle! table name #f)))
-              (or (cdr h) (begin (set-cdr! h (cons 'top-level name))
-                                 (cdr h)))))))
-      (define (top-level? s) (pair? s))
-      (define (top-level-name s) (cdr s))
+(define (compile-apply args acc)
+  (when (< (length args) 2)
+    (compile-error "apply needs a procedure and a list of arguments"))
+  (let ((prim (primitive-for (car args))))
+    (if prim
+        (call-function (primitive-value prim) (spread-args (compile-exprs (cdr args) acc)))
+        (match (compile-exprs args acc)
+          ((f . exprs) (call-function f (spread-args exprs)))))))
 
-      (define occurrence-count-table (make-hash-table))
-      (define (occurrence-count s) (or (hashq-ref occurrence-count-table s) 0))
-      (define (increment-occurrence-count! s)
-        (let ((h (hashq-create-handle! occurrence-count-table s 0)))
-          (if (zero? (cdr h))
-              (set! lexical-gensyms (cons s lexical-gensyms)))
-          (set-cdr! h (1+ (cdr h)))))
-
-      (define base-name
-        (let ((table (make-hash-table)))
-          (lambda (name)
-            (let ((h (hashq-create-handle! table name #f)))
-              (or (cdr h) (begin (set-cdr! h (compute-base-name name))
-                                 (cdr h)))))))
-
-      (define source-name-table (make-hash-table))
-      (define (set-source-name! s name)
-        (if (not (top-level? s))
-            (let ((name (if strip-numeric-suffixes?
-                            (base-name name)
-                            name)))
-              (hashq-set! source-name-table s name))))
-      (define (source-name s)
-        (if (top-level? s)
-            (top-level-name s)
-            (hashq-ref source-name-table s)))
-
-      (define conflict-table (make-hash-table))
-      (define (conflicts s) (or (hashq-ref conflict-table s) '()))
-      (define (add-conflict! a b)
-        (define (add! a b)
-          (if (not (top-level? a))
-              (let ((h (hashq-create-handle! conflict-table a '())))
-                (if (not (memq b (cdr h)))
-                    (set-cdr! h (cons b (cdr h)))))))
-        (add! a b)
-        (add! b a))
-
-      (let recurse-with-bindings ((e e) (bindings vlist-null))
-        (let recurse ((e e))
-
-          ;; We call this whenever we encounter a top-level ref or set
-          (define (top-level name)
-            (let ((bname (base-name name)))
-              (let ((s (top-level-intern! name))
-                    (conflicts (vhash-foldq* cons '() bname bindings)))
-                (for-each (cut add-conflict! s <>) conflicts))))
-
-          ;; We call this whenever we encounter a primitive reference.
-          ;; We must also call it for every primitive that might be
-          ;; inserted by 'tree-il->scheme'.  It is okay to call this
-          ;; even when 'tree-il->scheme' will not insert the named
-          ;; primitive; the worst that will happen is for a lexical
-          ;; variable of the same name to be renamed unnecessarily.
-          (define (primitive name) (top-level name))
-
-          ;; We call this whenever we encounter a lexical ref or set.
-          (define (lexical s)
-            (increment-occurrence-count! s)
-            (let ((conflicts
-                   (take-while
-                    (lambda (s*) (not (eq? s s*)))
-                    (reverse! (vhash-foldq* cons
-                                            '()
-                                            (base-name (source-name s))
-                                            bindings)))))
-              (for-each (cut add-conflict! s <>) conflicts)))
-
-          (record-case e
-                       ((<void>)  (primitive 'if)) ; (if #f #f)
-                       ((<const>) (primitive 'quote))
-
-                       ((<call> proc args)
-                        (if (lexical-ref? proc)
-                            (let* ((gensym (lexical-ref-gensym proc))
-                                   (name (source-name gensym)))
-                              ;; If the operator position contains a bare variable
-                              ;; reference with the same source name as a standard
-                              ;; primitive, we must ensure that it will be given a
-                              ;; different name, so that 'tree-il->scheme' will not
-                              ;; misinterpret the resulting expression.
-                              (if (primitive? name)
-                                  (add-conflict! gensym (top-level-intern! name)))))
-                        (recurse proc)
-                        (for-each recurse args))
-
-                       ((<primitive-ref> name) (primitive name))
-                       ((<primcall> name args) (primitive name) (for-each recurse args))
-
-                       ((<lexical-ref> gensym) (lexical gensym))
-                       ((<lexical-set> gensym exp)
-                        (primitive 'set!) (lexical gensym) (recurse exp))
-
-                       ((<module-ref> public?) (primitive (if public? '@ '@@)))
-                       ((<module-set> public? exp)
-                        (primitive 'set!) (primitive (if public? '@ '@@)) (recurse exp))
-
-                       ((<toplevel-ref> name) (top-level name))
-                       ((<toplevel-set> name exp)
-                        (primitive 'set!) (top-level name) (recurse exp))
-                       ((<toplevel-define> name exp) (top-level name) (recurse exp))
-
-                       ((<conditional> test consequent alternate)
-                        (cond (use-derived-syntax?
-                               (primitive 'and) (primitive 'or)
-                               (primitive 'cond) (primitive 'case)
-                               (primitive 'else) (primitive '=>)))
-                        (primitive 'if)
-                        (recurse test) (recurse consequent) (recurse alternate))
-
-                       ((<seq> head tail)
-                        (primitive 'begin) (recurse head) (recurse tail))
-
-                       ((<lambda> body)
-                        (if body (recurse body) (primitive 'case-lambda)))
-
-                       ((<lambda-case> req opt rest kw inits gensyms body alternate)
-                        (primitive 'lambda)
-                        (cond ((or opt kw alternate)
-                               (primitive 'lambda*)
-                               (primitive 'case-lambda)
-                               (primitive 'case-lambda*)))
-                        (primitive 'let)
-                        (if use-derived-syntax? (primitive 'let*))
-                        (let* ((names (append req (or opt '()) (if rest (list rest) '())
-                                              (map cadr (if kw (cdr kw) '()))))
-                               (base-names (map base-name names))
-                               (body-bindings
-                                (fold vhash-consq bindings base-names gensyms)))
-                          (for-each increment-occurrence-count! gensyms)
-                          (for-each set-source-name! gensyms names)
-                          (for-each recurse inits)
-                          (recurse-with-bindings body body-bindings)
-                          (if alternate (recurse alternate))))
-
-                       ((<let> names gensyms vals body)
-                        (primitive 'let)
-                        (cond (use-derived-syntax? (primitive 'let*) (primitive 'or)))
-                        (for-each increment-occurrence-count! gensyms)
-                        (for-each set-source-name! gensyms names)
-                        (for-each recurse vals)
-                        (recurse-with-bindings
-                         body (fold vhash-consq bindings (map base-name names) gensyms)))
-
-                       ((<letrec> in-order? names gensyms vals body)
-                        (primitive 'let)
-                        (cond (use-derived-syntax? (primitive 'let*) (primitive 'or)))
-                        (primitive (if in-order? 'letrec* 'letrec))
-                        (for-each increment-occurrence-count! gensyms)
-                        (for-each set-source-name! gensyms names)
-                        (let* ((base-names (map base-name names))
-                               (bindings (fold vhash-consq bindings base-names gensyms)))
-                          (for-each (cut recurse-with-bindings <> bindings) vals)
-                          (recurse-with-bindings body bindings)))
-
-                       ((<fix> names gensyms vals body)
-                        (primitive 'let)
-                        (primitive 'letrec*)
-                        (cond (use-derived-syntax? (primitive 'let*) (primitive 'or)))
-                        (for-each increment-occurrence-count! gensyms)
-                        (for-each set-source-name! gensyms names)
-                        (let* ((base-names (map base-name names))
-                               (bindings (fold vhash-consq bindings base-names gensyms)))
-                          (for-each (cut recurse-with-bindings <> bindings) vals)
-                          (recurse-with-bindings body bindings)))
-
-                       ((<let-values> exp body)
-                        (primitive 'call-with-values)
-                        (recurse exp) (recurse body))
-
-                       ((<prompt> tag body handler)
-                        (primitive 'call-with-prompt)
-                        (recurse tag) (recurse body) (recurse handler))
-
-                       ((<abort> tag args tail)
-                        (primitive 'apply)
-                        (primitive 'abort)
-                        (recurse tag) (for-each recurse args) (recurse tail)))))
-
-      (let ()
-        (define output-name-table (make-hash-table))
-        (define (set-output-name! s name)
-          (hashq-set! output-name-table s name))
-        (define (output-name s)
-          (if (top-level? s)
-              (top-level-name s)
-              (hashq-ref output-name-table s)))
-
-        (define sorted-lexical-gensyms
-          (sort-list lexical-gensyms
-                     (lambda (a b) (> (occurrence-count a)
-                                      (occurrence-count b)))))
-
-        (for-each (lambda (s)
-                    (set-output-name!
-                     s
-                     (let ((the-conflicts (conflicts s))
-                           (the-source-name (source-name s)))
-                       (define (not-yet-taken? name)
-                         (not (any (lambda (s*)
-                                     (and=> (output-name s*)
-                                            (cut eq? name <>)))
-                                   the-conflicts)))
-                       (if (not-yet-taken? the-source-name)
-                           the-source-name
-                           (let ((prefix (string-append
-                                          (symbol->string the-source-name)
-                                          "-")))
-                             (let loop ((i 1) (name the-source-name))
-                               (if (not-yet-taken? name)
-                                   name
-                                   (loop (+ i 1)
-                                         (string->symbol
-                                          (string-append
-                                           prefix
-                                           (number->string i)))))))))))
-                  sorted-lexical-gensyms)
-        (values output-name-table occurrence-count-table)))))
+(define (compile-primitive-call prim args acc)
+  (let ((argc (length args))
+        (min (primitive-min-args prim))
+        (max (primitive-max-args prim)))
+    (when (or (< argc min) (and max (> argc max)))
+      (compile-error "wrong number of arguments to `~a'" (primitive-name prim)))
+    (let* ((dups (primitive-dup-indices prim argc))
+           (exprs (compile-exprs args acc))
+           ;; Arguments used more than once are evaluated into temporaries
+           ;; (together with the previous ones, to keep the evaluation
+           ;; order).
+           (last-dup (fold (lambda (i e last)
+                             (if (and (memv i dups) (not (simple-expr? e))) i last))
+                           -1 (iota argc) exprs))
+           (exprs (map (lambda (i e)
+                         (if (and (<= i last-dup) (not (simple-expr? e)))
+                             (hoist! e acc)
+                             e))
+                       (iota argc) exprs)))
+      ;; Names created by primitives are parameters of the functions they
+      ;; create, so they don't need to be reserved in the current scope.
+      (call-with-function-scope
+       (lambda () ((primitive-compiler prim) exprs args fresh-name))))))

@@ -35,8 +35,8 @@
            (+ (fib (- n 2)) (fib (- n 1)))))
 
      (define (computeFibonacci)
-       (let ((elem (js-invoke document 'getElementById "number"))
-             (n (js-ref elem 'value)))
+       (let* ((elem (js-invoke document 'getElementById "number"))
+              (n (js-ref elem 'value)))
          (alert (+ "Fibonacci of " n " is " (fib n)))))))
 
 (define js-script
