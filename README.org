@@ -1,10 +1,46 @@
 
 * What is GuileScript?
 
-[[https://github.com/aconchillo/guilescript/actions/workflows/guile2.2.yml][https://github.com/aconchillo/guilescript/actions/workflows/guile3.0.yml/badge.svg]]
+[[https://github.com/aconchillo/guilescript/actions/workflows/guile3.0.yml][https://github.com/aconchillo/guilescript/actions/workflows/guile3.0.yml/badge.svg]]
 
-GuileScript is currently a toy compiler that aims to compile [[https://www.gnu.org/software/guile/][Guile]] to
-JavaScript. It currently doesn't do much, but it might in the future.
+GuileScript compiles [[https://www.gnu.org/software/guile/][Guile]] to readable, modern JavaScript.
+
+You write Scheme (with all of Guile's macro system) and you get the kind of
+JavaScript you would write by hand: =const=, =function=, arrow functions,
+=while= loops and ES modules. There is no runtime library: GuileScript uses
+JavaScript data and semantics, so the generated code works with any
+JavaScript library, npm package or bundler.
+
+#+BEGIN_SRC scheme
+(js-import "canvas-confetti" #:default confetti)
+
+(define-public (celebrate! times)
+  (let loop ((i 0))
+    (when (< i times)
+      (confetti #:particle-count 100 #:spread (* 10 (+ i 1)))
+      (loop (+ i 1)))))
+#+END_SRC
+
+#+BEGIN_SRC javascript
+import confetti from "canvas-confetti";
+
+export function celebrate(times) {
+  let i = 0;
+  while (true) {
+    if (i < times) {
+      confetti({ particleCount: 100, spread: 10 * (i + 1) });
+      i = i + 1;
+      continue;
+    }
+    return;
+  }
+}
+#+END_SRC
+
+If you need full Guile semantics in the browser (tail calls everywhere,
+continuations, the numeric tower...) have a look at [[https://spritely.institute/hoot/][Guile Hoot]] which compiles
+Guile to WebAssembly. GuileScript is the thin alternative: Scheme syntax and
+macros on top of plain JavaScript.
 
 * Why?
 
@@ -14,22 +50,19 @@ Guile. But thanks to GuileScript it is now with [[https://github.com/aconchillo/
 
 * How does it work?
 
-GuileScript leverages [[https://www.gnu.org/software/guile/manual/html_node/Compiler-Tower.html][Guile's Compiler Tower]]. It compiles Guile code into
-[[https://www.gnu.org/software/guile/manual/html_node/Tree_002dIL.html][Tree-IL]] and then compiles Tree-IL into JavaScript.
-
-Tree-IL is the first intermediate language (the main one actually being [[https://www.gnu.org/software/guile/manual/html_node/Continuation_002dPassing-Style.html][CPS]])
-that Guile code is actually converted to, so the only thing that I needed to do
-is figure out how Tree-IL works plus get some inspiration from [[https://github.com/clojure/clojurescript/blob/v0.0/src/clj/clojure/cljs.clj][ClojureScript
-first commit]].
+GuileScript leverages [[https://www.gnu.org/software/guile/manual/html_node/Compiler-Tower.html][Guile's Compiler Tower]]. Guile expands all the macros
+and compiles the code into [[https://www.gnu.org/software/guile/manual/html_node/Tree_002dIL.html][Tree-IL]]. GuileScript then compiles Tree-IL into a
+small JavaScript AST that is finally printed.
 
 * How do I try it out?
 
-Clone the repository and run:
+You need Guile 3.0. Clone the repository and run:
 
 #+BEGIN_EXAMPLE
 $ autoreconf -vif
 $ ./configure
 $ make
+$ make check    # needs Node.js
 $ sudo make install
 #+END_EXAMPLE
 
@@ -39,8 +72,12 @@ If you are on macOS you can actually install GuileScript through [[https://githu
 $ brew install aconchillo/guile/guilescript
 #+END_EXAMPLE
 
-If everything builds and installs fine you can try to compile one of the
-provided examples (e.g. =examples/fibonacci.gs=):
+Then compile one of the examples:
+
+#+BEGIN_EXAMPLE
+$ guilescript examples/fibonacci.gs
+$ guilescript -o fibonacci.js examples/fibonacci.gs
+#+END_EXAMPLE
 
 #+BEGIN_SRC scheme
 (define (fib n)
@@ -49,172 +86,225 @@ provided examples (e.g. =examples/fibonacci.gs=):
       (+ (fib (- n 2)) (fib (- n 1)))))
 #+END_SRC
 
-#+BEGIN_EXAMPLE
-$ guilescript examples/fibonacci.gs
-#+END_EXAMPLE
-
-which in this case would generate something like:
-
 #+BEGIN_SRC javascript
-var fib = function fib(n) {
-  return ((n<=1) ? 1 : (fib((n-2))+fib((n-1))));
-};
-#+END_SRC javascript
+function fib(n) {
+  return n <= 1 ? 1 : fib(n - 2) + fib(n - 1);
+}
+#+END_SRC
+
+GuileScript can also be used from Guile itself, see
+=examples/fibonacci-server.scm=.
+
+* Using npm packages and ES modules
+
+=js-import= imports JavaScript modules and =define-public= (or =export=)
+exports definitions. A file that uses them is an ES module that can be used
+with any bundler (esbuild, Vite, webpack...).
+
+| GuileScript                          | JavaScript                                    |
+|--------------------------------------+-----------------------------------------------|
+| (js-import "react" use-state)        | import { useState } from "react";             |
+|--------------------------------------+-----------------------------------------------|
+| (js-import "lodash" #:default _)     | import _ from "lodash";                       |
+|--------------------------------------+-----------------------------------------------|
+| (js-import "node:path" #:as path)    | import * as path from "node:path";            |
+|--------------------------------------+-----------------------------------------------|
+| (js-import "./style.css")            | import "./style.css";                         |
+|--------------------------------------+-----------------------------------------------|
+| (define-public (f x) ...)            | export function f(x) { ... }                  |
+|--------------------------------------+-----------------------------------------------|
+| (export f g)                         | adds export to the definitions of f and g     |
+|--------------------------------------+-----------------------------------------------|
+
+* Names
+
+Scheme names are converted to camelCase JavaScript names, so the code reads
+naturally from both sides. Names that are not defined in the program are
+JavaScript globals (e.g. =document=, =setTimeout= or =parseFloat=).
+
+| GuileScript    | JavaScript        |
+|----------------+-------------------|
+| log-counter    | logCounter        |
+|----------------+-------------------|
+| even?          | isEven            |
+|----------------+-------------------|
+| has-children?  | hasChildren       |
+|----------------+-------------------|
+| set-name!      | setName           |
+|----------------+-------------------|
+| list->vector   | listToVector      |
+|----------------+-------------------|
+| *debug*        | debug             |
+|----------------+-------------------|
+| new            | new_              |
+|----------------+-------------------|
+
+It is a compilation error if two different Scheme names end up with the same
+JavaScript name.
+
+* Data and semantics
+
+GuileScript uses JavaScript data types and JavaScript semantics.
+
+| GuileScript                      | JavaScript                   |
+|----------------------------------+------------------------------|
+| #t, #f                           | true, false                  |
+|----------------------------------+------------------------------|
+| #nil                             | null                         |
+|----------------------------------+------------------------------|
+| 42, 0.5, 1/2                     | 42, 0.5, 0.5                 |
+|----------------------------------+------------------------------|
+| "guile", #\g                     | "guile", "g"                 |
+|----------------------------------+------------------------------|
+| 'guile, #:guile                  | "guile"                      |
+|----------------------------------+------------------------------|
+| '(1 2 3), (list 1 2 x)           | [1, 2, 3], [1, 2, x]         |
+|----------------------------------+------------------------------|
+| #(1 2 3), (vector 1 2 x)         | [1, 2, 3], [1, 2, x]         |
+|----------------------------------+------------------------------|
+| `(1 ,x ,@xs)                     | [1, x, ...xs]                |
+|----------------------------------+------------------------------|
+| '((name . "Ann") (age . 30))     | { name: "Ann", age: 30 }     |
+|----------------------------------+------------------------------|
+| (make-hash-table)                | new Map()                    |
+|----------------------------------+------------------------------|
+
+A few things to keep in mind:
+
+- Conditionals use JavaScript truthiness, so =0= and =""= are false.
+
+- Lists and vectors are both arrays, so =cons= and =cdr= copy the array.
+
+- Symbols are strings, so =eq?= on two symbols compares strings.
+
+- =equal?= is JavaScript's ===, it doesn't compare arrays deeply.
+
+- Like in Guile, vector literals are constants: =#(1 2 x)= contains the
+  symbol =x=. Use =(vector 1 2 x)= or =`#(1 2 ,x)= instead.
+
+- A dotted pair that is not part of a quoted association list has no
+  JavaScript equivalent and is a compilation error.
+
+* Functions and control flow
+
+| GuileScript                       | JavaScript                                   |
+|-----------------------------------+----------------------------------------------|
+| (define a 23)                     | const a = 23;                                |
+|-----------------------------------+----------------------------------------------|
+| (define (f x y) ...)              | function f(x, y) { ... }                     |
+|-----------------------------------+----------------------------------------------|
+| (lambda (x) (* x 2))              | (x) => x * 2                                 |
+|-----------------------------------+----------------------------------------------|
+| (define (f a . rest) ...)         | function f(a, ...rest) { ... }               |
+|-----------------------------------+----------------------------------------------|
+| (define* (f a #:optional (b 1)))  | function f(a, b = 1) { ... }                 |
+|-----------------------------------+----------------------------------------------|
+| (define* (f #:key (a 1) b))       | function f({ a = 1, b } = {}) { ... }        |
+|-----------------------------------+----------------------------------------------|
+| (f 1 #:color "red" #:size 2)      | f(1, { color: "red", size: 2 })              |
+|-----------------------------------+----------------------------------------------|
+| (let ((x 1)) ...)                 | const x = 1; ...                             |
+|-----------------------------------+----------------------------------------------|
+| (if a b c)                        | a ? b : c, or an if statement                |
+|-----------------------------------+----------------------------------------------|
+| (and a b), (or a b)               | a ? b : false, a \vert\vert{} b                |
+|-----------------------------------+----------------------------------------------|
+| (error "Bad value:" x)            | throw new Error(["Bad value:", x].join(" ")) |
+|-----------------------------------+----------------------------------------------|
+
+=cond=, =case=, =when=, =unless=, =let*=, =letrec=, internal definitions,
+=case-lambda=, =apply=, quasiquote and all macros (=define-syntax=,
+=syntax-rules=, =syntax-case=) work as expected.
+
+Named =let= loops, =do= loops and functions that call themselves in tail
+position are compiled into =while= loops, so they don't grow the stack. Other
+tail calls (e.g. mutually recursive functions) are regular JavaScript calls.
+
+* JavaScript interoperability
+
+| GuileScript                           | JavaScript                  |
+|---------------------------------------+-----------------------------|
+| (js-ref obj 'prop)                    | obj.prop                    |
+|---------------------------------------+-----------------------------|
+| (js-ref obj 'a 'b)                    | obj.a.b                     |
+|---------------------------------------+-----------------------------|
+| (js-ref obj key)                      | obj[key]                    |
+|---------------------------------------+-----------------------------|
+| (js-set! obj 'prop value)             | obj.prop = value            |
+|---------------------------------------+-----------------------------|
+| (js-invoke obj 'method arg1 ... argN) | obj.method(arg1, ..., argN) |
+|---------------------------------------+-----------------------------|
+| (js-new Date arg1 ... argN)           | new Date(arg1, ..., argN)   |
+|---------------------------------------+-----------------------------|
+| (js-obj #:name "Ann" 'age 30)         | { name: "Ann", age: 30 }    |
+|---------------------------------------+-----------------------------|
+| (js-typeof x)                         | typeof x                    |
+|---------------------------------------+-----------------------------|
+| (js-instanceof x Date)                | x instanceof Date           |
+|---------------------------------------+-----------------------------|
+| (js-delete! obj 'prop)                | delete obj.prop             |
+|---------------------------------------+-----------------------------|
+
+Keywords (=#:first-name=) are converted to camelCase property names
+(=firstName=), symbols and strings are used as they are.
+
+* Built-in procedures
+
+These procedures are compiled inline into JavaScript (see
+=language/javascript/primitives.scm=):
+
+- Numbers: =+ - * / = < > <= >= 1+ 1- abs ceiling floor round truncate max
+  min sqrt exp log sin cos tan asin acos atan expt quotient remainder modulo
+  zero? positive? negative? odd? even? number? integer? nan? number->string
+  string->number=
+
+- Booleans and types: =not eq? eqv? equal? boolean? string? symbol? procedure?
+  list? vector? null? pair?=
+
+- Strings and characters: =string-length string-ref substring string-copy
+  string-append string string-upcase string-downcase string-null?
+  string-prefix? string-suffix? string-split string-join string-trim
+  string-trim-right string-trim-both string->list list->string string=?
+  string<? string>? char->integer integer->char char-upcase char-downcase
+  string->symbol symbol->string=
+
+- Lists and vectors: =list cons car cdr cadr cddr caddr first second third
+  last length list-ref list-tail list-head take drop append reverse
+  list-copy map for-each filter remove fold fold-right reduce any every find
+  count delete delete-duplicates member memq memv iota make-list sort vector
+  make-vector vector-length vector-ref vector-set! vector-fill! vector-copy
+  vector->list list->vector=
+
+- Association lists and hash tables: =assoc-ref assq-ref assv-ref
+  make-hash-table hash-ref hash-set! hash-remove! hash-clear! hash-for-each
+  hash-map->list=
+
+- Logging: =console-log console-debug console-info console-warn
+  console-error=
+
+The compiler warns when a program uses other Guile procedures (e.g. =display=),
+since they would be called as JavaScript globals.
 
 * What's missing?
 
-Too many things, but just to name a few:
+- =try=/=catch=, =async=/=await=, =this= and classes.
 
-- More types: maps, sets...
+- A small (tree-shakeable) runtime for things that can't be done inline, like
+  a deep =equal?= or =format=.
 
-- More vector and string functions.
+- Multiple values, continuations, =dynamic-wind= and parameters.
 
-- Support formatting in logging functions.
+- Source maps and a bundler plugin.
 
-- Integration with Google's [[https://developers.google.com/closure/compiler][Closure Compiler]].
+* Hacking
 
-And even long term:
-
-- Modules.
-
-- NodeJS integration.
-
-* What's supported?
-
-** Types
-
-| GuileScript | JavaScript |
-|-------------+------------|
-| #nil        | null       |
-|-------------+------------|
-| "guile"     | "guile"    |
-|-------------+------------|
-| 'guile      | guile      |
-|-------------+------------|
-| #t          | true       |
-|-------------+------------|
-| #f          | false      |
-|-------------+------------|
-| 234         | 234        |
-|-------------+------------|
-| 0.5         | 0.5        |
-|-------------+------------|
-| 1/2         | 0.5        |
-|-------------+------------|
-| #(1 2 3)    | [1,2,3]    |
-|-------------+------------|
-
-** Strings
-
-| GuileScript         | JavaScript |
-|---------------------+------------|
-| (string-length s)   | s.length   |
-|---------------------+------------|
-| (string-ref s i)    | s[i]       |
-|---------------------+------------|
-
-** Vectors
-
-| GuileScript         | JavaScript |
-|---------------------+------------|
-| (vector-length v)   | v.length   |
-|---------------------+------------|
-| (vector-ref v i)    | v[i]       |
-|---------------------+------------|
-| (vector-set! v i m) | v[i] = m   |
-|---------------------+------------|
-
-** Objects
-
-| GuileScript                           | JavaScript                |
-|---------------------------------------+---------------------------|
-| (js-invoke obj 'method arg1 ... argN) | obj.method(arg1,...,argN) |
-|---------------------------------------+---------------------------|
-| (js-new "type" arg1 ... argN)         | new type(arg1,...,argN)   |
-|---------------------------------------+---------------------------|
-| (js-ref obj 'prop)                    | obj.prop                  |
-|---------------------------------------+---------------------------|
-| (js-set! obj 'prop value)             | obj.prop = value          |
-|---------------------------------------+---------------------------|
-
-Note that ~(js-set! obj prop value)~ is just a shortcut to ~(set! (js-ref obj
-prop) value)~.
-
-** Operators
-
-| GuileScript       | JavaScript        |
-|-------------------+-------------------|
-| + - * / < > <= >= | + - * / < > <= >= |
-|-------------------+-------------------|
-| equal?            | ===               |
-|-------------------+-------------------|
-
-** Math
-
-| GuileScript | JavaScript |
-|-------------+------------|
-| abs         | Math.abs   |
-|-------------+------------|
-| ceiling     | Math.ceil  |
-|-------------+------------|
-| floor       | Math.floor |
-|-------------+------------|
-| max         | Math.max   |
-|-------------+------------|
-| min         | Math.min   |
-|-------------+------------|
-| round       | Math.round |
-|-------------+------------|
-
-** Logging (just simple strings)
-
-| GuileScript   | JavaScript    |
-|---------------+---------------|
-| console-log   | console.log   |
-|---------------+---------------|
-| console-debug | console.debug |
-|---------------+---------------|
-| console-error | console.error |
-|---------------+---------------|
-| console-warn  | console.warn  |
-|---------------+---------------|
-
-** Basic constructs
-
-| GuileScript                       | JavaScript                                                                      |
-|-----------------------------------+---------------------------------------------------------------------------------|
-| (define a 23)                     | var a = 23;                                                                     |
-|-----------------------------------+---------------------------------------------------------------------------------|
-| (set! a 45)                       | a = 45;                                                                         |
-|-----------------------------------+---------------------------------------------------------------------------------|
-| (begin e1 e2 ... eN)              | (function () { e1; e2; ... return eN; })()                                      |
-|-----------------------------------+---------------------------------------------------------------------------------|
-| (if test then else)               | (test ? then : else)                                                            |
-|-----------------------------------+---------------------------------------------------------------------------------|
-| (cond ((t1 e1) (t2 e2) (else e3)) | With simple e1, e2, e3: (function () { return (t1 ? e1 : (t2 ? e2 : e3)) })()   |
-|-----------------------------------+---------------------------------------------------------------------------------|
-| (when test e1 e2 ... eN)          | (function () { if (test) { e1; e2; ... return eN; } })()                        |
-|-----------------------------------+---------------------------------------------------------------------------------|
-| (let ((x 0) ...) e1 ... eN)       | (function () { var x = 0; var ...; e1; ... return eN; })()                      |
-|-----------------------------------+---------------------------------------------------------------------------------|
-| (let lp ((x 0) (y 0)) e1 ... eN)  | (function () { var lp = function(x,y) { ... return eN; }; return lp(0, 0); })() |
-|-----------------------------------+---------------------------------------------------------------------------------|
-| (lambda (x y) ... eN)             | (function (x, y) { ... return eN; })                                            |
-|-----------------------------------+---------------------------------------------------------------------------------|
-| (define (f x y) ... eN)           | var f = function f(x, y) { ... return eN; };                                    |
-|-----------------------------------+---------------------------------------------------------------------------------|
-
-** Macros
-
-Macros (define-syntax, syntax-rules, syntax-case) just work out of the box. This
-is because the Scheme-To-Tree-IL compiler performs macro expansion at the same
-time it analyzes the code, producing expanded Tree-IL expressions which is what
-GuileScript actually needs.
-
+Run the test suite with =make check= (it needs Node.js). Each test in =tests/=
+is a GuileScript program with its expected output in =;; => ...= comments
+(or an expected compilation error in =;; error: ...= comments).
 
 * License
 
-Copyright (C) 2022 Aleix Conchillo Flaque <aconchillo@gmail.com>
+Copyright (C) 2022-2026 Aleix Conchillo Flaque <aconchillo@gmail.com>
 
 GuileScript is free software: you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the
