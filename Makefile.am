@@ -1,7 +1,7 @@
 #
 # Makefile.am
 #
-# Copyright (C) 2022-2023 Aleix Conchillo Flaque <aconchillo@gmail.com>
+# Copyright (C) 2022-2026 Aleix Conchillo Flaque <aconchillo@gmail.com>
 #
 # This file is part of GuileScript.
 #
@@ -27,14 +27,42 @@ dist_bin_SCRIPTS = guilescript
 
 ACLOCAL_AMFLAGS = -I build-aux
 
-EXTRA_DIST = \
+EXAMPLES = \
 	examples/basic-objects.gs \
 	examples/binary-search.gs \
 	examples/date.gs \
-	examples/fibonacci-server.scm \
 	examples/fibonacci.gs \
 	examples/halve.gs \
 	examples/macro-add1.gs \
 	examples/macro-when.gs \
 	examples/timer.gs \
 	examples/vector-reverse.gs
+
+TESTS = \
+	tests/basics.gs \
+	tests/control.gs \
+	tests/error-dotted-pair.gs \
+	tests/error-import.gs \
+	tests/error-name-clash.gs \
+	tests/error-optional-key.gs \
+	tests/error-parameterize.gs \
+	tests/functions.gs \
+	tests/interop.gs \
+	tests/lists.gs \
+	tests/loops.gs \
+	tests/modules.gs \
+	tests/names.gs \
+	tests/strings.gs \
+	$(EXAMPLES)
+
+TEST_EXTENSIONS = .gs
+GS_LOG_COMPILER = $(top_srcdir)/tests/run-test
+AM_TESTS_ENVIRONMENT = \
+	GUILE="$(GUILE)"; export GUILE; \
+	GUILE_LOAD_COMPILED_PATH="$(abs_top_builddir)$${GUILE_LOAD_COMPILED_PATH:+:$$GUILE_LOAD_COMPILED_PATH}"; \
+	export GUILE_LOAD_COMPILED_PATH;
+
+EXTRA_DIST = \
+	$(TESTS) \
+	tests/run-test \
+	examples/fibonacci-server.scm

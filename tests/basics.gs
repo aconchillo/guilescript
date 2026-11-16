@@ -1,0 +1,45 @@
+;; -*- mode: scheme; coding: utf-8; -*-
+
+;;
+;; Constants, numbers, booleans and strings.
+;;
+
+(console-log 42 -7 0.5 1/4)
+;; => 42 -7 0.5 0.25
+
+(console-log "a\"b\\c")
+;; => a"b\c
+
+(console-log "line 1\nline 2")
+;; => line 1
+;; => line 2
+
+(console-log #t #f #nil)
+;; => true false null
+
+;; Symbols and characters are strings.
+(console-log 'hello-world #\x)
+;; => hello-world x
+
+(console-log (+ 1 2 3) (- 10 4) (- 5) (* 2 3 4) (/ 10 4) (/ 2) (+))
+;; => 6 6 -5 24 2.5 0.5 0
+
+(console-log (< 1 2) (< 1 3 2) (= 2 2) (<= 1 1 2) (> 3 2 1))
+;; => true false true true true
+
+(console-log (quotient 7 2) (remainder -7 2) (modulo -7 2) (expt 2 10) (expt -2 2))
+;; => 3 -1 1 1024 4
+
+(console-log (abs -3) (max 1 5 3) (min 4 2) (floor 2.7) (round 2.4) (sqrt 16))
+;; => 3 5 2 2 2 4
+
+(console-log (not #f) (zero? 0) (even? 4) (odd? 4) (1+ 1) (1- 1))
+;; => true true true false 2 0
+
+(console-log (number->string 255 16) (string->number "42") (number? 1) (integer? 1.5))
+;; => ff 42 true false
+
+;; GuileScript uses JavaScript truthiness: 0 and "" are false.
+(define (truthy x) (if x 'yes 'no))
+(console-log (truthy 0) (truthy "") (truthy '()) (truthy #f) (truthy 1))
+;; => no no yes no yes

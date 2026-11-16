@@ -1,0 +1,85 @@
+;; -*- mode: scheme; coding: utf-8; -*-
+
+;;
+;; Lists and vectors are JavaScript arrays.
+;;
+
+(define xs '(1 2 3 4 5))
+
+(console-log (car xs) (cdr xs) (cadr xs) (length xs) (list-ref xs 2))
+;; => 1 [ 2, 3, 4, 5 ] 2 5 3
+
+(console-log (cons 0 xs) (append '(a) '(1 2) '(z)) (reverse xs))
+;; => [ 0, 1, 2, 3, 4, 5 ] [ 'a', 1, 2, 'z' ] [ 5, 4, 3, 2, 1 ]
+
+(console-log (append) (append xs) (apply + xs) (sort '(b c a) string<?))
+;; => [] [ 1, 2, 3, 4, 5 ] 15 [ 'a', 'b', 'c' ]
+
+(console-log (null? '()) (null? xs) (pair? xs) (list? xs))
+;; => true false true true
+
+(console-log (map (lambda (x) (* x x)) xs))
+;; => [ 1, 4, 9, 16, 25 ]
+
+(console-log (filter odd? xs) (remove odd? xs))
+;; => [ 1, 3, 5 ] [ 2, 4 ]
+
+(console-log (fold + 0 xs) (fold cons '() '(1 2 3)) (reduce max 0 xs))
+;; => 15 [ 3, 2, 1 ] 5
+
+(console-log (any negative? xs) (every positive? xs) (find even? xs) (count even? xs))
+;; => false true 2 2
+
+(console-log (iota 5) (iota 3 1) (list-tail xs 3) (delete 3 xs))
+;; => [ 0, 1, 2, 3, 4 ] [ 1, 2, 3 ] [ 4, 5 ] [ 1, 2, 4, 5 ]
+
+(console-log (sort '(3 1 2) <) (member 3 xs) (delete-duplicates '(1 1 2 1)))
+;; => [ 1, 2, 3 ] true [ 1, 2 ]
+
+(console-log (vector 1 2) (vector-length #(1 2 3)) (make-vector 3 0))
+;; => [ 1, 2 ] 3 [ 0, 0, 0 ]
+
+;; Vector literals are constants (like in Guile): names inside are symbols.
+(define age 34)
+(console-log #(1 2 age) `#(1 2 ,age) #(1 #(2 "x")))
+;; => [ 1, 2, 'age' ] [ 1, 2, 34 ] [ 1, [ 2, 'x' ] ]
+
+(define v (vector 1 2 3))
+(vector-set! v 0 'x)
+(console-log v (vector-ref v 0))
+;; => [ 'x', 2, 3 ] x
+
+(for-each (lambda (x) (console-log "item" x)) '(a b))
+;; => item a
+;; => item b
+
+;;
+;; Quasiquote
+;;
+
+(define n 2)
+(define more '(3 4))
+(console-log `(1 ,n ,@more 5) `(a (b ,n)))
+;; => [ 1, 2, 3, 4, 5 ] [ 'a', [ 'b', 2 ] ]
+
+;;
+;; Quoted association lists are objects.
+;;
+
+(define person '((name . "Ann") (age . 30)))
+(console-log person (assoc-ref person 'name))
+;; => { name: 'Ann', age: 30 } Ann
+
+;;
+;; Hash tables are Maps.
+;;
+
+(define h (make-hash-table))
+(hash-set! h 'a 1)
+(hash-set! h 'b 2)
+(console-log (hash-ref h 'a) (hash-ref h 'z 'none) (hash-ref h 'z))
+;; => 1 none undefined
+
+(hash-remove! h 'a)
+(console-log (hash-map->list (lambda (k v) (list k v)) h))
+;; => [ [ 'b', 2 ] ]
