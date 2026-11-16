@@ -265,6 +265,21 @@
        (not (user-defined? (toplevel-ref-name x)))
        (method-js-name (toplevel-ref-name x))))
 
+;; (.-prop obj): returns the JavaScript property name.
+(define (property-ref x)
+  (and (toplevel-ref? x)
+       (property-symbol? (toplevel-ref-name x))
+       (not (user-defined? (toplevel-ref-name x)))
+       (property-js-name (toplevel-ref-name x))))
+
+;; (set! (f arg ...) value) expands to ((setter f) arg ... value). Returns f.
+(define (setter-target proc)
+  (and (call? proc)
+       (named-ref? (call-proc proc) 'setter)
+       (match (call-args proc)
+         ((target) target)
+         (_ #f))))
+
 (define %special-procedures '(apply error raise raise-exception js-import))
 
 ;;
@@ -311,6 +326,7 @@
          (let ((name (toplevel-ref-name y)))
            (unless (or (primitive-for y)
                        (method-ref y)
+                       (property-ref y)
                        (and (memq name %special-procedures)
                             (not (user-defined? name))))
              (register-js-name! name)
@@ -1075,6 +1091,13 @@
   (let ((name (toplevel-ref-name x)))
     (cond
      ((primitive-for x) => primitive-value)
+     ((property-ref x)
+      ;; .-prop as a value: (obj) => obj.prop
+      => (lambda (prop)
+           (call-with-function-scope
+            (lambda ()
+              (let ((obj (fresh-name "obj")))
+                `(arrow ((param ,obj)) ((return (dot (id ,obj) ,prop)))))))))
      ((method-ref x)
       ;; .method as a value: (obj, ...args) => obj.method(...args)
       => (lambda (method)
@@ -1241,6 +1264,13 @@
      ((named-ref? proc 'apply) (compile-apply args acc))
      ((method-ref proc)
       => (lambda (method) (compile-method-call method args acc)))
+     ((property-ref proc)
+      => (lambda (prop)
+           (match (compile-exprs args acc)
+             ((obj) `(dot ,obj ,prop))
+             (_ (compile-error "(.-~a obj) needs exactly one object" prop)))))
+     ((setter-target proc)
+      => (lambda (target) (compile-setter target args acc)))
      ((named-ref? proc 'js-import)
       (compile-error "js-import is only allowed at the top level"))
      ((and (lexical-ref? proc)
@@ -1258,6 +1288,20 @@
                                  '()
                                  `((object ,@(map (lambda (kw e) (cons (car kw) e))
                                                   keywords (drop exprs n)))))))))))))))
+
+;; (set! (.-prop obj) value) => obj.prop = value
+;; (set! (js-ref obj 'a 'b) value) => obj.a.b = value
+(define (compile-setter target args acc)
+  (cond
+   ((property-ref target)
+    => (lambda (prop)
+         (match (compile-exprs args acc)
+           ((obj value) `(assign (dot ,obj ,prop) ,value))
+           (_ (compile-error "(set! (.-~a obj) value) needs an object and a value" prop)))))
+   ((and (named-ref? target 'js-ref) (primitive-for target))
+    (compile-primitive-call (lookup-primitive 'js-set!) args acc))
+   (else
+    (compile-error "set! is only supported on variables, (.-prop obj) and (js-ref obj ...)"))))
 
 ;; (.method obj arg ...) => obj.method(arg, ...)
 (define (compile-method-call method args acc)

@@ -47,6 +47,8 @@ TESTS = \
 	tests/error-name-clash.gs \
 	tests/error-optional-key.gs \
 	tests/error-parameterize.gs \
+	tests/error-property.gs \
+	tests/error-setter.gs \
 	tests/functions.gs \
 	tests/interop.gs \
 	tests/lists.gs \

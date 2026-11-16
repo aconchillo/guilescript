@@ -228,6 +228,10 @@ tail calls (e.g. mutually recursive functions) are regular JavaScript calls.
 |---------------------------------------+-----------------------------|
 | (.to-fixed x 2)                       | x.toFixed(2)                |
 |---------------------------------------+-----------------------------|
+| (.-prop obj)                          | obj.prop                    |
+|---------------------------------------+-----------------------------|
+| (set! (.-prop obj) value)             | obj.prop = value            |
+|---------------------------------------+-----------------------------|
 | (js-ref obj 'prop)                    | obj.prop                    |
 |---------------------------------------+-----------------------------|
 | (js-ref obj 'a 'b)                    | obj.a.b                     |
@@ -235,6 +239,8 @@ tail calls (e.g. mutually recursive functions) are regular JavaScript calls.
 | (js-ref obj key)                      | obj[key]                    |
 |---------------------------------------+-----------------------------|
 | (js-set! obj 'prop value)             | obj.prop = value            |
+|---------------------------------------+-----------------------------|
+| (set! (js-ref obj 'a 'b) value)       | obj.a.b = value             |
 |---------------------------------------+-----------------------------|
 | (js-invoke obj 'method arg1 ... argN) | obj.method(arg1, ..., argN) |
 |---------------------------------------+-----------------------------|
@@ -249,11 +255,12 @@ tail calls (e.g. mutually recursive functions) are regular JavaScript calls.
 | (js-delete! obj 'prop)                | delete obj.prop             |
 |---------------------------------------+-----------------------------|
 
-Methods can also be used as values: =(map .toUpperCase strings)= compiles to
-=strings.map((x) => x.toUpperCase())=.
+Methods and properties can also be used as values: =(map .toUpperCase
+strings)= compiles to =strings.map((x) => x.toUpperCase())= and =(map .-length
+strings)= to =strings.map((x) => x.length)=.
 
-Method names (=.to-fixed=) and keywords (=#:first-name=) are converted to
-camelCase like any other name (=toFixed=, =firstName=). Symbols and strings
+Method and property names (=.to-fixed=, =.-max-value=) and keywords (=#:first-name=) are converted to
+camelCase like any other name (=toFixed=, =maxValue=, =firstName=). Symbols and strings
 given to =js-ref=, =js-invoke= and =js-obj= are used as they are.
 
 * Built-in procedures

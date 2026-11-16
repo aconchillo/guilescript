@@ -37,6 +37,8 @@
             keyword->js-name
             method-symbol?
             method-js-name
+            property-symbol?
+            property-js-name
             js-identifier-name?
             js-identifier?
             js-reserved?
@@ -181,7 +183,17 @@
        (let ((s (symbol->string sym)))
          (and (> (string-length s) 1)
               (char=? (string-ref s 0) #\.)
-              (not (char=? (string-ref s 1) #\.))))))
+              (not (memv (string-ref s 1) '(#\. #\-)))))))
 
 (define (method-js-name sym)
   (scheme->js-name (substring (symbol->string sym) 1) #:property? #t))
+
+;; Property access syntax: (.-prop obj) => obj.prop.
+(define (property-symbol? sym)
+  (and (symbol? sym)
+       (let ((s (symbol->string sym)))
+         (and (> (string-length s) 2)
+              (string-prefix? ".-" s)))))
+
+(define (property-js-name sym)
+  (scheme->js-name (substring (symbol->string sym) 2) #:property? #t))

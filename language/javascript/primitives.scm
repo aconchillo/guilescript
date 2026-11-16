@@ -222,16 +222,20 @@
               (or (not (primitive-max-args prim)) (<= argc (primitive-max-args prim)))
               ((primitive-compiler prim) args (map (const #f) args) fresh)))))
 
-;; If F-TIL is a method (e.g. .toUpperCase) used as a value, call the method
-;; directly on the first argument.
+;; If F-TIL is a method (e.g. .toUpperCase) or a property (e.g. .-length)
+;; used as a value, use it directly on the first argument.
 (define (inline-method f f-til args)
   (and f-til
        (toplevel-ref? f-til)
-       (method-symbol? (toplevel-ref-name f-til))
        (match f (('arrow . _) #t) (_ #f)) ; not redefined by the user
        (pair? args)
-       `(call (dot ,(car args) ,(method-js-name (toplevel-ref-name f-til)))
-              ,@(cdr args))))
+       (let ((name (toplevel-ref-name f-til)))
+         (cond
+          ((method-symbol? name)
+           `(call (dot ,(car args) ,(method-js-name name)) ,@(cdr args)))
+          ((property-symbol? name)
+           `(dot ,(car args) ,(property-js-name name)))
+          (else #f)))))
 
 (define (call-callback f f-til args fresh)
   (or (inline-primitive f f-til args fresh)

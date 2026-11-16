@@ -74,3 +74,14 @@
 (console-log (map .toUpperCase '("a" "b")) (upcase "c"))
 ;; => [ 'A', 'B' ] C
 
+;; Property access: (.-prop obj) => obj.prop
+(define point (js-obj 'x 1 #:max-value 10))
+(console-log (.-x point) (.-max-value point) (.-length '(1 2 3)) (map .-length '("a" "bb")))
+;; => 1 10 3 [ 1, 2 ]
+
+;; Properties can be set with set!, and so can js-ref paths.
+(set! (.-x point) 5)
+(set! (.-pos point) (js-obj))
+(set! (js-ref point 'pos 'y) 6)
+(console-log point)
+;; => { x: 5, maxValue: 10, pos: { y: 6 } }
