@@ -24,6 +24,7 @@ objdir=$(libdir)/guile/$(GUILE_EFFECTIVE_VERSION)/site-ccache/language/javascrip
 
 SOURCES = \
 	errors.scm \
+	names.scm \
 	spec.scm \
 	decompile-tree-il.scm \
 	translate.scm
