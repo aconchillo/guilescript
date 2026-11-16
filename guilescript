@@ -1,11 +1,11 @@
 #!/bin/sh
 # -*-scheme-*-
-exec guile -e "(@@ (guilescript) main)" -s "$0" "$@"
+exec ${GUILE:-guile} -e "(@@ (guilescript) main)" -s "$0" "$@"
 !#
 
 ;;; (guilescript) --- GuileScript.
 
-;; Copyright (C) 2022 Aleix Conchillo Flaque <aconchillo@gmail.com>
+;; Copyright (C) 2022-2026 Aleix Conchillo Flaque <aconchillo@gmail.com>
 ;;
 ;; This file is part of GuileScript.
 ;;
@@ -29,13 +29,62 @@ exec guile -e "(@@ (guilescript) main)" -s "$0" "$@"
 ;;; Code:
 
 (define-module (guilescript)
+  #:use-module (ice-9 getopt-long)
   #:use-module (ice-9 match)
-  #:use-module (language guilescript compile))
+  #:use-module (language guilescript compile)
+  #:use-module (language javascript errors))
 
-(define main
-  (match-lambda
-    ((_)
-     (display "Usage: guilescript filename")
-     (newline)
-     (exit 1))
-    ((_ filename) (display (compile-file filename)))))
+(define (usage port)
+  (display "Usage: guilescript [OPTION]... FILE
+
+Compile the GuileScript FILE into JavaScript.
+
+  -o, --output=FILE   write the JavaScript code to FILE (default: stdout)
+  -h, --help          display this help and exit
+" port))
+
+(define option-spec
+  '((output (single-char #\o) (value #t))
+    (help (single-char #\h) (value #f))))
+
+(define (fail fmt . args)
+  (apply format (current-error-port) fmt args)
+  (newline (current-error-port))
+  (exit 1))
+
+(define (compile-to-port file port)
+  (catch #t
+    (lambda ()
+      (display (compile-file file) port))
+    (lambda (key . args)
+      (match (cons key args)
+        (('guilescript-error message location)
+         (fail "~a: error: ~a" (or (format-location location) file) message))
+        (('syntax-error who message source form subform)
+         (fail "~a: error: ~a: ~s"
+               (or (format-location source) file) message (or subform form)))
+        (('read-error who message message-args . _)
+         (fail "~a: error: ~a" file (apply format #f message message-args)))
+        (_
+         (fail "~a: error: ~a" file
+               (call-with-output-string
+                 (lambda (p) (print-exception p #f key args)))))))))
+
+(define (main args)
+  (let* ((options (catch 'misc-error
+                    (lambda () (getopt-long args option-spec))
+                    (lambda (key who message message-args . _)
+                      (fail "guilescript: ~a" (apply format #f message message-args)))))
+         (output (option-ref options 'output #f)))
+    (when (option-ref options 'help #f)
+      (usage (current-output-port))
+      (exit 0))
+    (match (option-ref options '() '())
+      ((file)
+       (if output
+           (let ((js (call-with-output-string (lambda (p) (compile-to-port file p)))))
+             (call-with-output-file output (lambda (p) (display js p))))
+           (compile-to-port file (current-output-port))))
+      (_
+       (usage (current-error-port))
+       (exit 1)))))
