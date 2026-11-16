@@ -258,6 +258,13 @@
    ((primitive-ref? x) (lookup-primitive (primitive-ref-name x)))
    (else #f)))
 
+;; (.method obj arg ...): returns the JavaScript method name.
+(define (method-ref x)
+  (and (toplevel-ref? x)
+       (method-symbol? (toplevel-ref-name x))
+       (not (user-defined? (toplevel-ref-name x)))
+       (method-js-name (toplevel-ref-name x))))
+
 (define %special-procedures '(apply error raise raise-exception js-import))
 
 ;;
@@ -303,6 +310,7 @@
         ((toplevel-ref? y)
          (let ((name (toplevel-ref-name y)))
            (unless (or (primitive-for y)
+                       (method-ref y)
                        (and (memq name %special-procedures)
                             (not (user-defined? name))))
              (register-js-name! name)
@@ -1067,6 +1075,15 @@
   (let ((name (toplevel-ref-name x)))
     (cond
      ((primitive-for x) => primitive-value)
+     ((method-ref x)
+      ;; .method as a value: (obj, ...args) => obj.method(...args)
+      => (lambda (method)
+           (call-with-function-scope
+            (lambda ()
+              (let ((obj (fresh-name "obj"))
+                    (args (fresh-name "args")))
+                `(arrow ((param ,obj) (rest ,args))
+                        ((return (call (dot (id ,obj) ,method) (spread (id ,args)))))))))))
      ((and (memq name %special-procedures) (not (user-defined? name)))
       (compile-error "`~a' can only be called, it can't be used as a value" name))
      (else `(id ,(toplevel-js-name name))))))
@@ -1222,6 +1239,8 @@
      ((primitive-for proc)
       => (lambda (prim) (compile-primitive-call prim args acc)))
      ((named-ref? proc 'apply) (compile-apply args acc))
+     ((method-ref proc)
+      => (lambda (method) (compile-method-call method args acc)))
      ((named-ref? proc 'js-import)
       (compile-error "js-import is only allowed at the top level"))
      ((and (lexical-ref? proc)
@@ -1239,6 +1258,21 @@
                                  '()
                                  `((object ,@(map (lambda (kw e) (cons (car kw) e))
                                                   keywords (drop exprs n)))))))))))))))
+
+;; (.method obj arg ...) => obj.method(arg, ...)
+(define (compile-method-call method args acc)
+  (when (null? args)
+    (compile-error "(.~a obj ...) needs an object to call the method on" method))
+  (let-values (((positional keywords) (split-keyword-args (cdr args))))
+    (match (compile-exprs (append (list (car args)) positional (map cdr keywords)) acc)
+      ((obj . exprs)
+       (let ((n (length positional)))
+         `(call (dot ,obj ,method)
+                ,@(take exprs n)
+                ,@(if (null? keywords)
+                      '()
+                      `((object ,@(map (lambda (kw e) (cons (car kw) e))
+                                       keywords (drop exprs n)))))))))))
 
 (define (compile-apply args acc)
   (when (< (length args) 2)

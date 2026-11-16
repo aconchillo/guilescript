@@ -35,6 +35,8 @@
   #:use-module (srfi srfi-1)
   #:export (scheme->js-name
             keyword->js-name
+            method-symbol?
+            method-js-name
             js-identifier-name?
             js-identifier?
             js-reserved?
@@ -170,3 +172,16 @@
 
 (define (keyword->js-name kw)
   (scheme->js-name (keyword->symbol kw) #:property? #t))
+
+;; Method call syntax: (.method obj arg ...) => obj.method(arg, ...). The
+;; method name follows the same rules as other names, so (.to-fixed x 2)
+;; => x.toFixed(2). Note that ... (the ellipsis) is not a method.
+(define (method-symbol? sym)
+  (and (symbol? sym)
+       (let ((s (symbol->string sym)))
+         (and (> (string-length s) 1)
+              (char=? (string-ref s 0) #\.)
+              (not (char=? (string-ref s 1) #\.))))))
+
+(define (method-js-name sym)
+  (scheme->js-name (substring (symbol->string sym) 1) #:property? #t))

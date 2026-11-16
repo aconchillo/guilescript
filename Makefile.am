@@ -43,6 +43,7 @@ TESTS = \
 	tests/control.gs \
 	tests/error-dotted-pair.gs \
 	tests/error-import.gs \
+	tests/error-method.gs \
 	tests/error-name-clash.gs \
 	tests/error-optional-key.gs \
 	tests/error-parameterize.gs \

@@ -222,8 +222,20 @@
               (or (not (primitive-max-args prim)) (<= argc (primitive-max-args prim)))
               ((primitive-compiler prim) args (map (const #f) args) fresh)))))
 
+;; If F-TIL is a method (e.g. .toUpperCase) used as a value, call the method
+;; directly on the first argument.
+(define (inline-method f f-til args)
+  (and f-til
+       (toplevel-ref? f-til)
+       (method-symbol? (toplevel-ref-name f-til))
+       (match f (('arrow . _) #t) (_ #f)) ; not redefined by the user
+       (pair? args)
+       `(call (dot ,(car args) ,(method-js-name (toplevel-ref-name f-til)))
+              ,@(cdr args))))
+
 (define (call-callback f f-til args fresh)
   (or (inline-primitive f f-til args fresh)
+      (inline-method f f-til args)
       (call-function f args)))
 
 ;; JavaScript array methods pass extra arguments (index, array) to callbacks,

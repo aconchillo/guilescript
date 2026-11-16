@@ -224,6 +224,10 @@ tail calls (e.g. mutually recursive functions) are regular JavaScript calls.
 
 | GuileScript                           | JavaScript                  |
 |---------------------------------------+-----------------------------|
+| (.method obj arg1 ... argN)           | obj.method(arg1, ..., argN) |
+|---------------------------------------+-----------------------------|
+| (.to-fixed x 2)                       | x.toFixed(2)                |
+|---------------------------------------+-----------------------------|
 | (js-ref obj 'prop)                    | obj.prop                    |
 |---------------------------------------+-----------------------------|
 | (js-ref obj 'a 'b)                    | obj.a.b                     |
@@ -245,8 +249,12 @@ tail calls (e.g. mutually recursive functions) are regular JavaScript calls.
 | (js-delete! obj 'prop)                | delete obj.prop             |
 |---------------------------------------+-----------------------------|
 
-Keywords (=#:first-name=) are converted to camelCase property names
-(=firstName=), symbols and strings are used as they are.
+Methods can also be used as values: =(map .toUpperCase strings)= compiles to
+=strings.map((x) => x.toUpperCase())=.
+
+Method names (=.to-fixed=) and keywords (=#:first-name=) are converted to
+camelCase like any other name (=toFixed=, =firstName=). Symbols and strings
+given to =js-ref=, =js-invoke= and =js-obj= are used as they are.
 
 * Built-in procedures
 

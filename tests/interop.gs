@@ -51,3 +51,26 @@
 (console-log (parseFloat "1.5") (js-typeof setTimeout))
 ;; => 1.5 function
 
+;; Method calls: (.method obj arg ...) => obj.method(arg, ...)
+(console-log (.toUpperCase "abc") (.slice '(1 2 3 4) 1 3) (.to-fixed 3.14159 2))
+;; => ABC [ 2, 3 ] 3.14
+
+(console-log (.join (.map '(1 2) (lambda (x) (* x 10))) "-"))
+;; => 10-20
+
+;; Reserved words are fine as method names.
+(define m (make-hash-table))
+(hash-set! m 'k 1)
+(.delete m 'k)
+(console-log (js-ref m 'size))
+;; => 0
+
+;; Keyword arguments work like in any other call.
+(console-log (.assign Object (js-obj 'a 1) #:b 2))
+;; => { a: 1, b: 2 }
+
+;; Methods can be used as values.
+(define upcase .toUpperCase)
+(console-log (map .toUpperCase '("a" "b")) (upcase "c"))
+;; => [ 'A', 'B' ] C
+

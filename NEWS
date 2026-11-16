@@ -27,6 +27,8 @@
   - ES modules: js-import imports npm packages (or any module) and
     define-public/export export definitions.
 
+  - Method call syntax: (.method obj arg ...) => obj.method(arg, ...).
+
   - Many more built-in procedures (lists, strings, hash tables...) compiled
     inline. New js-obj, js-typeof, js-instanceof and js-delete!. js-ref and
     js-set! accept property paths.
