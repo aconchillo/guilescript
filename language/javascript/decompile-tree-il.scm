@@ -59,16 +59,18 @@
             compile-program))
 
 (define (decompile-tree-il x env opts)
-  (values (print-js (compile-program x)) env))
+  (values (print-js (compile-program x (and (module? env) env))) env))
 
 ;;
 ;; Compilation unit state
 ;;
 
 (define-record-type <unit>
-  (make-unit defined assigned exports imported js-names lexical-assigned
-             inline-loops emitted gensym-names scopes form-scope)
+  (make-unit env bindings defined assigned exports imported js-names
+             lexical-assigned inline-loops emitted gensym-names scopes form-scope)
   unit?
+  (env unit-env)                        ; module where the code was expanded
+  (bindings unit-bindings)              ; name -> Guile binding (memoized)
   (defined unit-defined)                ; name -> number of definitions
   (assigned unit-assigned)              ; name -> #t if set!
   (exports unit-exports set-unit-exports!)
@@ -85,8 +87,9 @@
 
 (define current-unit (make-parameter #f))
 
-(define (new-unit)
-  (make-unit (make-hash-table) (make-hash-table) '() (make-hash-table)
+(define (new-unit env)
+  (make-unit env (make-hash-table)
+             (make-hash-table) (make-hash-table) '() (make-hash-table)
              (make-hash-table) (make-hash-table) (make-hash-table)
              (make-hash-table) (make-hash-table) (list (make-hash-table))
              (make-hash-table)))
@@ -258,11 +261,78 @@
            (named-ref? (call-proc x) 'raise)
            (named-ref? (call-proc x) 'raise-exception))))
 
+;; (use-modules ...) expands into a call to process-use-modules.
+(define (use-modules-form? x)
+  (and (call? x) (named-ref? (call-proc x) 'process-use-modules)))
+
+;;
+;; Guile bindings
+;;
+;; Names are looked up in the module where the code was expanded, to know if
+;; they come from Guile or from a module imported with use-modules. Macros
+;; from any module are fine (they are expanded at compile time), but
+;; procedures are only supported if GuileScript compiles them inline.
+
+;; The Guile binding of NAME: (MODULE-NAME ORIGINAL-NAME VARIABLE), or #f if
+;; NAME is not bound in Guile (so it is a JavaScript global). ORIGINAL-NAME is
+;; the name in MODULE-NAME (it can be different with #:select or #:prefix).
+(define (guile-binding name)
+  (let ((cache (unit-bindings (current-unit))))
+    (match (hashq-ref cache name 'unknown)
+      ('unknown
+       (let ((binding (lookup-guile-binding (unit-env (current-unit)) name)))
+         (hashq-set! cache name binding)
+         binding))
+      (binding binding))))
+
+(define (lookup-guile-binding env name)
+  (if env
+      ;; The variable NAME resolves to, and the imported module providing it
+      ;; (possibly re-exported). Imported modules can replace bindings from
+      ;; Guile core (e.g. format from (ice-9 format)), so (guile) is the
+      ;; provider only if no other module provides the same variable.
+      (let* ((var (module-variable env name))
+             (providers (if var
+                            (filter (lambda (iface) (eq? var (module-variable iface name)))
+                                    (module-uses env))
+                            '()))
+             (iface (or (find (lambda (iface) (not (equal? (module-name iface) '(guile))))
+                              providers)
+                        (and (pair? providers) (car providers)))))
+        (and iface
+             (let ((module (module-name iface)))
+               (list module
+                     (if (eq? (module-kind iface) 'custom-interface)
+                         (or (original-name module var) name)
+                         name)
+                     var))))
+      (let ((var (module-variable the-root-module name)))
+        (and var (list '(guile) name var)))))
+
+(define (original-name module var)
+  (call/ec
+   (lambda (return)
+     (module-for-each (lambda (name v) (when (eq? v var) (return name)))
+                      (resolve-interface module))
+     #f)))
+
+;; Primitives are the standard Guile procedures, so a binding is a primitive
+;; only if it's the same variable as the one in (guile) or (srfi srfi-1).
+(define (standard-variable? name var)
+  (any (lambda (module)
+         (eq? var (module-variable (resolve-interface module) name)))
+       '((guile) (srfi srfi-1))))
+
 (define (primitive-for x)
   (cond
    ((toplevel-ref? x)
     (let ((name (toplevel-ref-name x)))
-      (and (not (user-defined? name)) (lookup-primitive name))))
+      (and (not (user-defined? name))
+           (match (guile-binding name)
+             (#f (lookup-primitive name))
+             ((module original var)
+              (and (standard-variable? original var)
+                   (lookup-primitive original)))))))
    ((module-ref? x) (lookup-primitive (module-ref-name x)))
    ((primitive-ref? x) (lookup-primitive (primitive-ref-name x)))
    (else #f)))
@@ -319,7 +389,20 @@
          (when names
            (set-unit-exports! unit (append (unit-exports unit) names)))))
      (toplevel-forms x))
-    ;; Assignments and top-level names.
+    ;; Assignments and top-level names (macro definitions are only used at
+    ;; compile time, so they are skipped).
+    (for-each
+     (lambda (form)
+       (unless (and (toplevel-define? form) (macro-definition? (toplevel-define-exp form)))
+         (analyze-form! form)))
+     (toplevel-forms x))
+    (for-each (lambda (name)
+                (unless (user-defined? name)
+                  (compile-error "exported name `~a' is not defined" name)))
+              (unit-exports unit))))
+
+(define (analyze-form! x)
+  (let ((unit (current-unit)))
     (tree-il-fold
      (lambda (y seed)
        (cond
@@ -338,25 +421,29 @@
                        (property-ref y)
                        (and (memq name %special-procedures)
                             (not (user-defined? name))))
-             (register-js-name! name)
-             (warn-if-guile-procedure! name (tree-il-src y))))))
+             (check-guile-binding! name (tree-il-src y))
+             (register-js-name! name)))))
        seed)
      (lambda (y seed) seed)
-     #f x)
-    (for-each (lambda (name)
-                (unless (user-defined? name)
-                  (compile-error "exported name `~a' is not defined" name)))
-              (unit-exports unit))))
+     #f x)))
 
-;; Names that are not defined in the program are JavaScript globals, but
-;; warn about Guile procedures that GuileScript doesn't support (e.g. display).
-(define (warn-if-guile-procedure! name src)
+;; Names that are not defined in the program nor bound in Guile are
+;; JavaScript globals. Unsupported procedures from Guile core get a warning
+;; (they might also be JavaScript globals), but the ones from modules
+;; imported with use-modules are an error.
+(define (check-guile-binding! name src)
   (unless (or (user-defined? name)
               (js-protected-global? (symbol->string name)))
-    (let ((var (module-variable the-root-module name)))
-      (when (and var (variable-bound? var) (procedure? (variable-ref var)))
-        (compile-warning src "`~a' is a Guile procedure not supported by GuileScript, it will be called as a JavaScript global"
-                         name)))))
+    (match (guile-binding name)
+      (#f #t)
+      (('(guile) _ var)
+       (when (and (variable-bound? var) (procedure? (variable-ref var)))
+         (compile-warning src "`~a' is a Guile procedure not supported by GuileScript, it will be called as a JavaScript global"
+                          name)))
+      ((module _ _)
+       (note-location! src)
+       (compile-error "`~a' from ~a is not supported by GuileScript (only macros and GuileScript built-in procedures can be imported from Guile modules)"
+                      name module)))))
 
 ;; Two different Scheme names must not compile to the same JavaScript name.
 (define (register-js-name! name)
@@ -577,8 +664,8 @@
 ;; Programs
 ;;
 
-(define (compile-program x)
-  (parameterize ((current-unit (new-unit)))
+(define* (compile-program x #:optional env)
+  (parameterize ((current-unit (new-unit env)))
     (reset-location!)
     (analyze! x)
     (let ((acc (new-acc))
@@ -605,6 +692,7 @@
   (note-location! (first-user-location x))
   (cond
    ((toplevel-define? x) (compile-definition x acc))
+   ((use-modules-form? x) #t)
    ((export-form-names x) #t)
    ((js-import-form? x) (emit! acc (compile-import x)))
    (else (compile-stmt x 'effect acc))))
@@ -1282,6 +1370,8 @@
       => (lambda (target) (compile-setter target args acc)))
      ((named-ref? proc 'js-import)
       (compile-error "js-import is only allowed at the top level"))
+     ((named-ref? proc 'process-use-modules)
+      (compile-error "use-modules is only allowed at the top level"))
      ((and (lexical-ref? proc)
            (not (hashq-ref (unit-gensym-names (current-unit)) (lexical-ref-gensym proc) #f)))
       (compile-error "internal error: call to an inlined loop outside of a tail position"))

@@ -36,6 +36,11 @@
     inline. New js-obj, js-typeof, js-instanceof and js-delete!. js-ref and
     js-set! accept property paths.
 
+  - use-modules: macros from any Guile module can be used (e.g. match or
+    cut), and so can the procedures GuileScript compiles inline (also with
+    #:select or #:prefix). Other procedures from Guile modules are a
+    compilation error.
+
   - Compilation errors and warnings with source locations. New -o option in
     the guilescript command.
 

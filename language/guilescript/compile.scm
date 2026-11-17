@@ -25,18 +25,25 @@
 
 (define-module (language guilescript compile)
   #:use-module ((system base compile) #:prefix system:)
+  #:use-module ((system base language) #:select (default-environment))
   #:use-module (language javascript errors)
   #:export (compile compile-file))
 
+;; The code is expanded in a fresh module (ENV), which is also given to the
+;; JavaScript compiler so it knows where imported names come from.
+
 (define (compile exp)
-  (system:decompile
-   (system:compile exp #:from 'guilescript #:to 'tree-il)
-   #:from 'tree-il #:to 'javascript))
+  (let ((env (default-environment 'guilescript)))
+    (system:decompile
+     (system:compile exp #:from 'guilescript #:to 'tree-il #:env env)
+     #:from 'tree-il #:to 'javascript #:env env)))
 
 (define (compile-file filename)
   (call-with-source-file filename
     (lambda ()
       (call-with-input-file filename
         (lambda (p)
-          (let ((tree-il (system:read-and-compile p #:from 'guilescript #:to 'tree-il)))
-            (system:decompile tree-il #:from 'tree-il #:to 'javascript)))))))
+          (let* ((env (default-environment 'guilescript))
+                 (tree-il (system:read-and-compile p #:from 'guilescript #:to 'tree-il
+                                                   #:env env)))
+            (system:decompile tree-il #:from 'tree-il #:to 'javascript #:env env)))))))
