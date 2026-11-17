@@ -186,8 +186,53 @@
     ((or ('call . _) ('function . _)) (string-append "(" (expr* e indent) ")"))
     (_ (expr e 17 indent))))
 
-(define (arguments args indent)
-  (string-append "(" (comma-list (map (lambda (a) (element a indent)) args)) ")"))
+;; Remove one level of indentation from the lines (except the first one) of
+;; S, which was printed one level deeper than needed.
+(define (dedent s)
+  (string-join (let ((lines (string-split s #\newline)))
+                 (cons (car lines)
+                       (map (lambda (line)
+                              (if (string-prefix? "  " line) (substring line 2) line))
+                            (cdr lines))))
+               "\n"))
+
+;; The arguments of a call, after the callee (PREFIX characters). They are on
+;; the same line if they fit, or if only the last one (e.g. a function) spans
+;; several lines. Otherwise, there's one argument per line.
+(define (arguments args indent prefix)
+  (let* ((items (map (lambda (a) (element a (+ indent 1))) args))
+         (multi-line (filter (lambda (s) (string-index s #\newline)) items))
+         (inline (comma-list items)))
+    (cond
+     ((and (null? multi-line)
+           (<= (+ (* 2 indent) prefix (string-length inline) 2) max-line-width))
+      (string-append "(" inline ")"))
+     ((and (pair? items)
+           (equal? multi-line (list (last items)))
+           (<= (+ (* 2 indent) prefix
+                  (string-length (comma-list (append (drop-right items 1)
+                                                     (list (first-line (last items))))))
+                  1)
+               max-line-width))
+      (string-append "(" (comma-list (append (drop-right items 1)
+                                              (list (dedent (last items)))))
+                     ")"))
+     (else
+      (string-append "(\n"
+                     (string-join (map (lambda (s) (string-append (indent-string (+ indent 1)) s))
+                                       items)
+                                  ",\n")
+                     "\n" (indent-string indent) ")")))))
+
+(define (last-line s)
+  (match (string-rindex s #\newline)
+    (#f s)
+    (i (substring s (+ i 1)))))
+
+(define (first-line s)
+  (match (string-index s #\newline)
+    (#f s)
+    (i (substring s 0 i))))
 
 (define (expr* e indent)
   (match e
@@ -213,9 +258,11 @@
                      entries)
                 indent #t))
     (('call f . args)
-     (string-append (callee f indent) (arguments args indent)))
+     (let ((f (callee f indent)))
+       (string-append f (arguments args indent (string-length (last-line f))))))
     (('new f . args)
-     (string-append "new " (new-callee f indent) (arguments args indent)))
+     (let ((f (string-append "new " (new-callee f indent))))
+       (string-append f (arguments args indent (string-length (last-line f))))))
     (('dot obj name)
      (string-append (member-object obj indent) "." name))
     (('index obj key)
