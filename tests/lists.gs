@@ -18,6 +18,11 @@
 (console-log (null? '()) (null? xs) (pair? xs) (list? xs))
 ;; => true false true true
 
+;; #nil and "not found" (undefined) are not empty lists.
+(define nothing #nil)
+(console-log (null? (hash-ref (make-hash-table) 'k)) (null? nothing) (eq? nothing '()))
+;; => false false false
+
 ;; Arrays are never ===, so comparing with '() checks for an empty list.
 (define none '())
 (console-log (eq? none '()) (equal? '() xs) (eqv? none '()))

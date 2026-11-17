@@ -495,13 +495,21 @@
 
 (define-comparison! '(= char=? string=?) "===")
 
+;; x?.length === 0 (#nil and undefined are not empty lists).
+(define (empty-list? x)
+  (binop "==="
+         (match x
+           (('array . _) (prop x "length"))
+           (_ `(optional-dot ,x "length")))
+         (num 0)))
+
 ;; Two arrays are never ===, so (eq? x '()) is (null? x).
 (define-primitive! '(eq? eqv?) 2 2
   (simple-compiler
    (lambda (a b)
      (match (list a b)
-       ((('array) x) (binop "===" (prop x "length") (num 0)))
-       ((x ('array)) (binop "===" (prop x "length") (num 0)))
+       ((('array) x) (empty-list? x))
+       ((x ('array)) (empty-list? x))
        (_ (binop "===" a b)))))
   #:value (lambda (fresh)
             (let ((a (fresh "a")) (b (fresh "b")))
@@ -520,8 +528,8 @@
 ;; helper), unless one of the values is a string, a number...
 (define (equal-expr a b)
   (match (list a b)
-    ((('array) x) (binop "===" (prop x "length") (num 0)))
-    ((x ('array)) (binop "===" (prop x "length") (num 0)))
+    ((('array) x) (empty-list? x))
+    ((x ('array)) (empty-list? x))
     (_ (if (or (atom-expr? a) (atom-expr? b))
            (binop "===" a b)
            (call (helper-ref 'equal) a b)))))
@@ -648,7 +656,7 @@
 (define-inline boolean? (x) ((typeof-check "boolean") x))
 (define-inline procedure? (x) ((typeof-check "function") x))
 (define-inline (list? vector?) (x) (call (js-path "Array.isArray") x))
-(define-inline null? (x) (binop "===" (prop x "length") (num 0)))
+(define-inline null? (x) (empty-list? x))
 
 (define-primitive! 'pair? 1 1
   (simple-compiler

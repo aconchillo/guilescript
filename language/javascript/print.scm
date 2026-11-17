@@ -29,7 +29,7 @@
 ;;                              can also be (spread E)
 ;;   (call F ARG ...)           ARG can be (spread E)
 ;;   (new F ARG ...)
-;;   (dot E NAME) (index E E)
+;;   (dot E NAME) (optional-dot E NAME) (index E E)
 ;;   (binop OP A B) (unop OP A) (ternary T A B) (assign TARGET E)
 ;;   (function NAME PARAMS STMTS) (arrow PARAMS STMTS) (async ARROW)
 ;;
@@ -132,7 +132,7 @@
     (('ternary . _) 3)
     (('binop op . _) (binop-precedence op))
     (('unop . _) 15)
-    ((or ('call . _) ('new . _) ('dot . _) ('index . _)) 17)
+    ((or ('call . _) ('new . _) ('dot . _) ('optional-dot . _) ('index . _)) 17)
     (_ 18)))
 
 ;;
@@ -266,6 +266,8 @@
        (string-append f (arguments args indent (string-length (last-line f))))))
     (('dot obj name)
      (string-append (member-object obj indent) "." name))
+    (('optional-dot obj name)
+     (string-append (member-object obj indent) "?." name))
     (('index obj key)
      (string-append (member-object obj indent) "[" (expr key 0 indent) "]"))
     (('binop op a b)

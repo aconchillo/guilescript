@@ -952,7 +952,7 @@
 ;; Math.max.
 (define (simple-expr? e)
   (match e
-    (('dot obj _) (simple-expr? obj))
+    (((or 'dot 'optional-dot) obj _) (simple-expr? obj))
     (_ (pure-expr? e))))
 
 ;; Deliver the value E (#f or (undefined) if unspecified) to CTX.
