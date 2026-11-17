@@ -78,7 +78,7 @@
   (make-unit env bindings defined assigned exports imported js-names
              lexical-assigned inline-loops emitted gensym-names scopes form-scope
              records value-refs aliases preferred-names renamed generated-names
-             stmt-locations)
+             stmt-locations ref-counts)
   unit?
   (env unit-env)                        ; module where the code was expanded
   (bindings unit-bindings)              ; name -> Guile binding (memoized)
@@ -107,7 +107,9 @@
   ;; Top-level variables introduced by macros -> JavaScript name.
   (generated-names unit-generated-names)
   ;; Statement -> source location (for source maps).
-  (stmt-locations unit-stmt-locations))
+  (stmt-locations unit-stmt-locations)
+  ;; gensym -> number of references.
+  (ref-counts unit-ref-counts))
 
 (define current-unit (make-parameter #f))
 
@@ -118,7 +120,7 @@
              (make-hash-table) (make-hash-table) (list (make-hash-table))
              (make-hash-table) (make-hash-table) (make-hash-table)
              (make-hash-table) (make-hash-table) (make-hash-table)
-             (make-hash-table) (make-hash-table)))
+             (make-hash-table) (make-hash-table) (make-hash-table)))
 
 (define (user-defined? name)
   (let ((unit (current-unit)))
@@ -130,6 +132,12 @@
 
 (define (binding-kind gensym)
   (if (lexical-assigned? gensym) "let" "const"))
+
+;; A variable that is never used (e.g. the dummy variables Guile introduces
+;; for expressions between definitions).
+(define (unused? gensym)
+  (and (zero? (hashq-ref (unit-ref-counts (current-unit)) gensym 0))
+       (not (lexical-assigned? gensym))))
 
 ;;
 ;; Statement accumulators
@@ -634,7 +642,7 @@
 (define (analyze-form! x)
   (let ((unit (current-unit))
         (called (make-hash-table))
-        (ref-counts (make-hash-table))
+        (ref-counts (unit-ref-counts (current-unit)))
         (copies '()))
     ;; References in call position.
     (tree-il-fold (lambda (y seed)
@@ -1077,9 +1085,11 @@
 
 (define (compile-let-bindings! x acc)
   (for-each (lambda (gensym name val)
-              (match (alias-name gensym)
-                (#f (compile-declaration! (binding-kind gensym) (bind-local! gensym name) val acc))
-                (original (set-gensym-name! gensym original))))
+              (cond
+               ((unused? gensym) (compile-stmt val 'effect acc))
+               ((alias-name gensym) => (cut set-gensym-name! gensym <>))
+               (else
+                (compile-declaration! (binding-kind gensym) (bind-local! gensym name) val acc))))
             (let-gensyms x) (let-names x) (let-vals x)))
 
 (define (compile-letrec-bindings! x acc)
@@ -1094,6 +1104,7 @@
                  ((and (record-call-kind val) (not (lexical-assigned? gensym)))
                   (when (value-ref? gensym)
                     (emit! acc (compile-record-function name val acc))))
+                 ((unused? gensym) (compile-stmt val 'effect acc))
                  (else
                   (compile-declaration! (binding-kind gensym) name val acc))))
               gensyms names (letrec-vals x))))

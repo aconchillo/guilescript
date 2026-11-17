@@ -72,6 +72,7 @@ TESTS = \
 	tests/records.gs \
 	tests/source-map.gs \
 	tests/strings.gs \
+	tests/unused.gs \
 	tests/values.gs \
 	tests/warning-await-for-each.gs \
 	vite-plugin-guilescript/test.mjs \
