@@ -88,7 +88,7 @@
                #:on-click ,(lambda (event) ((.-on-delete props)))
                "×"))))
 
-;; The filters: (name label). (A quoted association list would be an object.)
+;; The filters: (name label).
 (define filters '(("all" "All") ("active" "Active") ("done" "Done")))
 
 (define (<app>)

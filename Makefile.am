@@ -43,6 +43,7 @@ TESTS = \
 	tests/async.gs \
 	tests/basics.gs \
 	tests/control.gs \
+	tests/error-association-list.gs \
 	tests/error-await.gs \
 	tests/error-dotted-pair.gs \
 	tests/error-guile-module.gs \

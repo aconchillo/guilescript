@@ -38,7 +38,7 @@
   (cond ((assoc-ref alist key) => (lambda (v) (* v 10)))
         (else 0)))
 
-(console-log (lookup '((a . 1) (b . 2)) 'b) (lookup '((a . 1)) 'z))
+(console-log (lookup (js-obj 'a 1 'b 2) 'b) (lookup (js-obj 'a 1) 'z))
 ;; => 20 0
 
 (define (describe n)

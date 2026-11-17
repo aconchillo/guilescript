@@ -1638,20 +1638,26 @@
 ;; Values
 ;;
 
+;; JavaScript has no pairs: quoted data is always made of arrays (lists and
+;; vectors), so dotted pairs are a compilation error.
+(define (dotted-pair? v)
+  (and (pair? v) (not (list? v))))
+
+(define (dotted-pair-error v)
+  (compile-error "the pair ~s has no JavaScript equivalent (JavaScript has no pairs): use a list, e.g. ~s"
+                 v (let lp ((v v))
+                     (if (pair? v) (cons (car v) (lp (cdr v))) (list v)))))
+
+;; e.g. '(("all" . "All") ...)
+(define (association-list-error alist)
+  (match (find dotted-pair? alist)
+    ((key . value)
+     (compile-error "quoted association lists have no JavaScript equivalent (JavaScript has no pairs): use a list of lists to iterate it, e.g. '(~s ...), or js-obj for an object, e.g. (js-obj ~a ~s ...)"
+                    (list key value)
+                    (if (symbol? key) (format #f "'~s" key) (format #f "~s" key))
+                    value))))
+
 (define (compile-constant v)
-  (define (key-string k)
-    (cond
-     ((symbol? k) (symbol->string k))
-     ((string? k) k)
-     ((keyword? k) (keyword->js-name k))))
-  (define (object-alist? v)
-    (and (pair? v) (list? v)
-         (every (lambda (entry)
-                  (and (pair? entry)
-                       (or (symbol? (car entry)) (string? (car entry)) (keyword? (car entry)))
-                       (not (pair? (cdr entry)))
-                       (not (null? (cdr entry)))))
-                v)))
   (cond
    ((eq? v #t) '(bool #t))
    ((eq? v #f) '(bool #f))
@@ -1664,13 +1670,10 @@
    ((symbol? v) `(str ,(symbol->string v)))
    ((keyword? v) `(str ,(symbol->string (keyword->symbol v))))
    ((vector? v) `(array ,@(map compile-constant (vector->list v))))
-   ((object-alist? v)
-    `(object ,@(map (lambda (entry)
-                      (cons (key-string (car entry)) (compile-constant (cdr entry))))
-                    v)))
+   ((and (pair? v) (list? v) (every pair? v) (any dotted-pair? v))
+    (association-list-error v))
    ((list? v) `(array ,@(map compile-constant v)))
-   ((pair? v)
-    (compile-error "the pair ~s has no JavaScript equivalent (use a list, a quoted association list or js-obj)" v))
+   ((pair? v) (dotted-pair-error v))
    (else (compile-error "unsupported constant ~s" v))))
 
 (define (primitive-value prim)

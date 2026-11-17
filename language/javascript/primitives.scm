@@ -23,8 +23,9 @@
 ;; expressions, so no runtime library is needed.
 ;;
 ;; GuileScript uses JavaScript data and semantics: lists and vectors are
-;; arrays, symbols and characters are strings, hash tables are Maps and
-;; quoted association lists are objects.
+;; arrays, symbols and characters are strings and hash tables are Maps.
+;; JavaScript has no pairs, so there are no association lists: objects are
+;; created with js-obj.
 ;;
 ;; Each primitive has a compiler procedure that receives:
 ;;
@@ -640,7 +641,9 @@
   #:dup '(1))
 
 ;;
-;; Association lists (quoted association lists are objects)
+;; Object properties. (assoc-ref obj key) is obj[key], so code that reads
+;; objects with assoc-ref can be shared with Guile code, where they would be
+;; association lists.
 ;;
 
 (define-primitive! '(assoc-ref assq-ref assv-ref) 2 2

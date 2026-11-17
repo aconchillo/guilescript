@@ -391,7 +391,7 @@ GuileScript uses JavaScript data types and JavaScript semantics.
 | `'(1 2 3)`, `(list 1 2 x)` | `[1, 2, 3]`, `[1, 2, x]` |
 | `#(1 2 3)`, `(vector 1 2 x)` | `[1, 2, 3]`, `[1, 2, x]` |
 | `` `(1 ,x ,@xs) `` | `[1, x, ...xs]` |
-| `'((name . "Ann") (age . 30))` | `{ name: "Ann", age: 30 }` |
+| `(js-obj #:name "Ann" #:age 30)` | `{ name: "Ann", age: 30 }` |
 | `(make-hash-table)` | `new Map()` |
 | `(define-record-type <point> ...)` | `class Point { ... }` |
 | `(values a b)`, `(values x)` | `[a, b]`, `x` |
@@ -414,8 +414,22 @@ A few things to keep in mind:
 - Like in Guile, vector literals are constants: `#(1 2 x)` contains the
   symbol `x`. Use `(vector 1 2 x)` or `` `#(1 2 ,x) `` instead.
 
-- A dotted pair that is not part of a quoted association list has no
-  JavaScript equivalent and is a compilation error.
+- JavaScript has no pairs, so quoted data is always made of arrays, and
+  dotted pairs (e.g. a quoted association list) are a compilation error.
+  Use a list of lists to have something to iterate, or `js-obj` for an
+  object:
+
+  ```scheme
+  (define filters '(("all" "All") ("done" "Done")))   ; [["all", "All"], ...]
+  (map car filters)                                    ; ["all", "done"]
+
+  (define labels (js-obj "all" "All" "done" "Done"))  ; { all: "All", ... }
+  (assoc-ref labels "all")                             ; labels.all
+  ```
+
+  `assoc-ref` (and `assq-ref`, `assv-ref`) reads the properties of an
+  object, so code that reads objects with it can be shared with Guile code,
+  where they would be association lists.
 
 ## Functions and control flow
 
@@ -560,8 +574,8 @@ These procedures are compiled inline into JavaScript (see
   member memq memv iota make-list sort vector make-vector vector-length
   vector-ref vector-set! vector-fill! vector-copy vector->list list->vector`
 
-- Association lists and hash tables: `assoc-ref assq-ref assv-ref
-  make-hash-table hash-ref hash-set! hash-remove! hash-clear! hash-for-each
+- Objects and hash tables: `assoc-ref assq-ref assv-ref` (object
+  properties), `make-hash-table hash-ref hash-set! hash-remove! hash-clear! hash-for-each
   hash-map->list`
 
 - Multiple values: `values call-with-values`

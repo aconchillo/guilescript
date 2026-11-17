@@ -63,12 +63,18 @@
 ;; => [ 1, 2, 3, 4, 5 ] [ 'a', [ 'b', 2 ] ]
 
 ;;
-;; Quoted association lists are objects.
+;; Objects are created with js-obj (quoted data is always arrays: JavaScript
+;; has no pairs). assoc-ref reads their properties.
 ;;
 
-(define person '((name . "Ann") (age . 30)))
+(define person (js-obj 'name "Ann" #:age 30))
 (console-log person (assoc-ref person 'name))
 ;; => { name: 'Ann', age: 30 } Ann
+
+;; A list of lists can be iterated.
+(define filters '(("all" "All") ("done" "Done")))
+(console-log (map car filters) (map cadr filters))
+;; => [ 'all', 'done' ] [ 'All', 'Done' ]
 
 ;;
 ;; Hash tables are Maps.
