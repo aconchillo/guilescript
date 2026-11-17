@@ -93,8 +93,23 @@ function fib(n) {
 }
 ```
 
-GuileScript can also be used from Guile itself, see
-`examples/fibonacci-server.scm`.
+GuileScript can also be used from a Guile program, e.g. a web server:
+`compile-file` and `compile-modules` (from `(language guilescript compile)`)
+compile GuileScript files into JavaScript (see
+`examples/task-manager/server.scm`).
+
+### Examples
+
+- `examples/*.gs`: small programs.
+
+- `examples/fibonacci-server.scm`: a Guile web server with GuileScript code.
+
+- `examples/vite`: a minimal Vite project.
+
+- `examples/task-manager`: a complete application. A Guile web server with a
+  JSON API (tasks stored in SQLite), and the web page in GuileScript in two
+  versions: using the DOM directly, and with React and Vite. The task
+  validation is shared by the server and the web pages.
 
 ### Source maps
 
@@ -201,7 +216,9 @@ searched relative to the module being compiled (`src/` here) and in the
 directories given with `-L`. `#:select` and `#:prefix` work as usual.
 
 GuileScript modules export functions and values. Macros can be shared through
-Guile modules.
+Guile modules. A GuileScript module that only uses what works the same way
+in Guile can also be loaded by Guile, e.g. to share code between a Guile
+server and a web page (see `examples/task-manager`).
 
 ## Using with Vite
 

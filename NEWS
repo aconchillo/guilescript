@@ -42,6 +42,20 @@
     export. New -d option to compile a file and all the GuileScript modules
     it imports, and -L to add directories where modules are searched.
 
+  - compile-modules compiles GuileScript files and the modules they import
+    from Guile programs (e.g. a web server). -L directories are also
+    searched for Guile modules (e.g. with macros).
+
+  - Warn about functions using js-await given to for-each (which doesn't
+    wait for them). (apply .method obj ... list) is compiled into
+    obj.method(..., ...list). Unused local variables are not declared, and
+    Guile's warnings while expanding (about Guile's semantics) are not
+    shown anymore.
+
+  - New example: a complete task manager (examples/task-manager), with a
+    Guile server (SQLite, JSON API) and the web page in GuileScript, with
+    and without React.
+
   - Source maps: new --source-map option to generate source maps
     (FILE.js.map next to the compiled files, or inline when writing to
     stdout), so stack traces and developer tools point to the .gs files.
