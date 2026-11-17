@@ -151,15 +151,15 @@ GuileScript code they come from.
 exports definitions. A file that uses them is an ES module that can be used
 with any bundler (esbuild, Vite, webpack...).
 
-| GuileScript | JavaScript |
-|---|---|
-| `(js-import "react" use-state)` | `import { useState } from "react";` |
-| `(js-import "lodash" #:default _)` | `import _ from "lodash";` |
-| `(js-import "node:path" #:as path)` | `import * as path from "node:path";` |
-| `(js-import "./style.css")` | `import "./style.css";` |
+| GuileScript                                              | JavaScript                                      |
+|----------------------------------------------------------|-------------------------------------------------|
+| `(js-import "react" use-state)`                          | `import { useState } from "react";`             |
+| `(js-import "lodash" #:default _)`                       | `import _ from "lodash";`                       |
+| `(js-import "node:path" #:as path)`                      | `import * as path from "node:path";`            |
+| `(js-import "./style.css")`                              | `import "./style.css";`                         |
 | `(js-import "node:path" #:rename '((join . path-join)))` | `import { join as pathJoin } from "node:path";` |
-| `(define-public (f x) ...)` | `export function f(x) { ... }` |
-| `(export f g)` | adds `export` to the definitions of `f` and `g` |
+| `(define-public (f x) ...)`                              | `export function f(x) { ... }`                  |
+| `(export f g)`                                           | adds `export` to the definitions of `f` and `g` |
 
 ## What works and what never will
 
@@ -290,13 +290,13 @@ imported from a Guile module:
 
 Some common modules:
 
-| Module | What can be used |
-|---|---|
-| `(ice-9 match)`, `(srfi srfi-26)`, `(srfi srfi-2)` | everything (they are macros) |
-| `(srfi srfi-1)`, `(srfi srfi-13)` | the built-in procedures (`fold`, `iota`, ...) |
-| `(srfi srfi-9)` | `define-record-type` (GuileScript's own) |
-| `(ice-9 receive)`, `(srfi srfi-11)` | everything (multiple values are arrays) |
-| `(ice-9 rdelim)`, `(ice-9 textual-ports)` | never (ports) |
+| Module                                             | What can be used                              |
+|----------------------------------------------------|-----------------------------------------------|
+| `(ice-9 match)`, `(srfi srfi-26)`, `(srfi srfi-2)` | everything (they are macros)                  |
+| `(srfi srfi-1)`, `(srfi srfi-13)`                  | the built-in procedures (`fold`, `iota`, ...) |
+| `(srfi srfi-9)`                                    | `define-record-type` (GuileScript's own)      |
+| `(ice-9 receive)`, `(srfi srfi-11)`                | everything (multiple values are arrays)       |
+| `(ice-9 rdelim)`, `(ice-9 textual-ports)`          | never (ports)                                 |
 
 There's no need to check this by hand: anything that can't be used is a
 compilation error that says which name and which module.
@@ -350,16 +350,16 @@ has both a React version and a version that creates DOM elements).
 Scheme names are converted to camelCase JavaScript names, so the code reads
 naturally from both sides.
 
-| GuileScript | JavaScript |
-|---|---|
-| `log-counter` | `logCounter` |
-| `even?` | `isEven` |
-| `has-children?` | `hasChildren` |
-| `set-name!` | `setName` |
-| `list->vector` | `listToVector` |
-| `*debug*` | `debug` |
-| `new` | `new_` |
-| `<http-request>` | `HttpRequest` |
+| GuileScript      | JavaScript     |
+|------------------|----------------|
+| `log-counter`    | `logCounter`   |
+| `even?`          | `isEven`       |
+| `has-children?`  | `hasChildren`  |
+| `set-name!`      | `setName`      |
+| `list->vector`   | `listToVector` |
+| `*debug*`        | `debug`        |
+| `new`            | `new_`         |
+| `<http-request>` | `HttpRequest`  |
 
 It is a compilation error if two different Scheme names end up with the same
 JavaScript name.
@@ -381,21 +381,21 @@ error, so typos are found at compile time instead of at runtime.
 
 GuileScript uses JavaScript data types and JavaScript semantics.
 
-| GuileScript | JavaScript |
-|---|---|
-| `#t`, `#f` | `true`, `false` |
-| `#nil` | `null` |
-| `42`, `0.5`, `1/2` | `42`, `0.5`, `0.5` |
-| `"guile"`, `#\g` | `"guile"`, `"g"` |
-| `'guile`, `#:guile` | `"guile"` |
-| `'(1 2 3)`, `(list 1 2 x)` | `[1, 2, 3]`, `[1, 2, x]` |
-| `#(1 2 3)`, `(vector 1 2 x)` | `[1, 2, 3]`, `[1, 2, x]` |
-| `` `(1 ,x ,@xs) `` | `[1, x, ...xs]` |
-| `(js-obj #:name "Ann" #:age 30)` | `{ name: "Ann", age: 30 }` |
-| `(make-hash-table)` | `new Map()` |
-| `(define-record-type <point> ...)` | `class Point { ... }` |
-| `(values a b)`, `(values x)` | `[a, b]`, `x` |
-| `(receive (a b) expr body ...)` | `const [a, b] = expr; body ...` |
+| GuileScript                        | JavaScript                      |
+|------------------------------------|---------------------------------|
+| `#t`, `#f`                         | `true`, `false`                 |
+| `#nil`                             | `null`                          |
+| `42`, `0.5`, `1/2`                 | `42`, `0.5`, `0.5`              |
+| `"guile"`, `#\g`                   | `"guile"`, `"g"`                |
+| `'guile`, `#:guile`                | `"guile"`                       |
+| `'(1 2 3)`, `(list 1 2 x)`         | `[1, 2, 3]`, `[1, 2, x]`        |
+| `#(1 2 3)`, `(vector 1 2 x)`       | `[1, 2, 3]`, `[1, 2, x]`        |
+| `` `(1 ,x ,@xs) ``                 | `[1, x, ...xs]`                 |
+| `(js-obj #:name "Ann" #:age 30)`   | `{ name: "Ann", age: 30 }`      |
+| `(make-hash-table)`                | `new Map()`                     |
+| `(define-record-type <point> ...)` | `class Point { ... }`           |
+| `(values a b)`, `(values x)`       | `[a, b]`, `x`                   |
+| `(receive (a b) expr body ...)`    | `const [a, b] = expr; body ...` |
 
 A few things to keep in mind:
 
@@ -433,21 +433,21 @@ A few things to keep in mind:
 
 ## Functions and control flow
 
-| GuileScript | JavaScript |
-|---|---|
-| `(define a 23)` | `const a = 23;` |
-| `(define (f x y) ...)` | `function f(x, y) { ... }` |
-| `(lambda (x) (* x 2))` | `(x) => x * 2` |
-| `(define (f a . rest) ...)` | `function f(a, ...rest) { ... }` |
-| `(define* (f a #:optional (b 1)))` | `function f(a, b = 1) { ... }` |
-| `(define* (f #:key (a 1) b))` | `function f({ a = 1, b } = {}) { ... }` |
-| `(f 1 #:color "red" #:size 2)` | `f(1, { color: "red", size: 2 })` |
-| `(let ((x 1)) ...)` | `const x = 1; ...` |
-| `(if a b c)` | `a ? b : c`, or an `if` statement |
-| `(and a b)`, `(or a b)` | `a ? b : false`, `a \|\| b` |
-| `(error "Bad value:" x)` | `throw new Error(["Bad value:", x].join(" "))` |
-| `(raise obj)` | `throw obj` |
-| `(guard (e clause ...) body ...)` | `try { body } catch (e) { clause ... }` |
+| GuileScript                        | JavaScript                                     |
+|------------------------------------|------------------------------------------------|
+| `(define a 23)`                    | `const a = 23;`                                |
+| `(define (f x y) ...)`             | `function f(x, y) { ... }`                     |
+| `(lambda (x) (* x 2))`             | `(x) => x * 2`                                 |
+| `(define (f a . rest) ...)`        | `function f(a, ...rest) { ... }`               |
+| `(define* (f a #:optional (b 1)))` | `function f(a, b = 1) { ... }`                 |
+| `(define* (f #:key (a 1) b))`      | `function f({ a = 1, b } = {}) { ... }`        |
+| `(f 1 #:color "red" #:size 2)`     | `f(1, { color: "red", size: 2 })`              |
+| `(let ((x 1)) ...)`                | `const x = 1; ...`                             |
+| `(if a b c)`                       | `a ? b : c`, or an `if` statement              |
+| `(and a b)`, `(or a b)`            | `a ? b : false`, `a \|\| b`                    |
+| `(error "Bad value:" x)`           | `throw new Error(["Bad value:", x].join(" "))` |
+| `(raise obj)`                      | `throw obj`                                    |
+| `(guard (e clause ...) body ...)`  | `try { body } catch (e) { clause ... }`        |
 
 `guard` is the R7RS one: its clauses are `cond` clauses and, if none of them
 matches, the exception is raised again.
@@ -504,24 +504,24 @@ imported.
 
 ## JavaScript interoperability
 
-| GuileScript | JavaScript |
-|---|---|
-| `(.method obj arg1 ... argN)` | `obj.method(arg1, ..., argN)` |
-| `(.to-fixed x 2)` | `x.toFixed(2)` |
-| `(.-prop obj)` | `obj.prop` |
-| `(set! (.-prop obj) value)` | `obj.prop = value` |
-| `(js-ref obj 'prop)` | `obj.prop` |
-| `(js-ref obj 'a 'b)` | `obj.a.b` |
-| `(js-ref obj key)` | `obj[key]` |
-| `(js-set! obj 'prop value)` | `obj.prop = value` |
-| `(set! (js-ref obj 'a 'b) value)` | `obj.a.b = value` |
+| GuileScript                             | JavaScript                    |
+|-----------------------------------------|-------------------------------|
+| `(.method obj arg1 ... argN)`           | `obj.method(arg1, ..., argN)` |
+| `(.to-fixed x 2)`                       | `x.toFixed(2)`                |
+| `(.-prop obj)`                          | `obj.prop`                    |
+| `(set! (.-prop obj) value)`             | `obj.prop = value`            |
+| `(js-ref obj 'prop)`                    | `obj.prop`                    |
+| `(js-ref obj 'a 'b)`                    | `obj.a.b`                     |
+| `(js-ref obj key)`                      | `obj[key]`                    |
+| `(js-set! obj 'prop value)`             | `obj.prop = value`            |
+| `(set! (js-ref obj 'a 'b) value)`       | `obj.a.b = value`             |
 | `(js-invoke obj 'method arg1 ... argN)` | `obj.method(arg1, ..., argN)` |
-| `(js-new Date arg1 ... argN)` | `new Date(arg1, ..., argN)` |
-| `(js-obj #:name "Ann" 'age 30)` | `{ name: "Ann", age: 30 }` |
-| `(js-typeof x)` | `typeof x` |
-| `(js-instanceof x Date)` | `x instanceof Date` |
-| `(js-delete! obj 'prop)` | `delete obj.prop` |
-| `(js-await promise)` | `await promise` |
+| `(js-new Date arg1 ... argN)`           | `new Date(arg1, ..., argN)`   |
+| `(js-obj #:name "Ann" 'age 30)`         | `{ name: "Ann", age: 30 }`    |
+| `(js-typeof x)`                         | `typeof x`                    |
+| `(js-instanceof x Date)`                | `x instanceof Date`           |
+| `(js-delete! obj 'prop)`                | `delete obj.prop`             |
+| `(js-await promise)`                    | `await promise`               |
 
 A function that uses `js-await` is compiled into an `async` function. At the
 top level of an ES module, `js-await` is a top-level `await`.
