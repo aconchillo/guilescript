@@ -409,7 +409,12 @@ A few things to keep in mind:
 
 - Lists and vectors are both arrays, so `cons` and `cdr` copy the array.
 
-- Symbols are strings, so `eq?` on two symbols compares strings.
+- Symbols are strings, so `eq?` on two symbols compares strings (and
+  `string?` is true for symbols).
+
+- `member`, `memq` and `memv` return `#t` instead of the rest of the list,
+  and `any` and `every` return `#t` instead of the predicate's value. Both
+  work the same in conditions.
 
 - Like in Scheme, `equal?` compares lists and vectors element by element
   (and so do `member`, `delete` and `delete-duplicates`), while `eq?` and
@@ -468,13 +473,18 @@ matches, the exception is raised again.
     (.parse JSON s)))
 ```
 
+`error-object-message` is the error's `message`, which includes the
+irritants (`"Bad value: 42"`).
+
 `cond`, `case`, `when`, `unless`, `let*`, `letrec`, internal definitions,
 `case-lambda`, `apply`, quasiquote and all macros (`define-syntax`,
-`syntax-rules`, `syntax-case`) work as expected.
+`syntax-rules`, `syntax-case`) work as expected. `case` compares with `===`,
+so strings can be used as keys too.
 
 Named `let` loops, `do` loops and functions that call themselves in tail
 position are compiled into `while` loops, so they don't grow the stack. Other
-tail calls (e.g. mutually recursive functions) are regular JavaScript calls.
+tail calls (e.g. mutually recursive functions) are regular JavaScript calls,
+so very deep recursion can run out of stack.
 
 ## Records
 
@@ -564,7 +574,9 @@ These procedures are compiled inline into JavaScript (see
 - Numbers: `+ - * / = < > <= >= 1+ 1- abs ceiling floor round truncate max
   min sqrt exp log sin cos tan asin acos atan expt quotient remainder modulo
   zero? positive? negative? odd? even? number? integer? nan? exact inexact
-  exact->inexact inexact->exact number->string string->number`
+  exact->inexact inexact->exact number->string string->number floor/
+  floor-quotient floor-remainder truncate/ truncate-quotient
+  truncate-remainder`
 
 - Booleans and types: `not eq? eqv? equal? boolean? string? symbol? keyword?
   char? procedure? list? vector? null? pair?`
