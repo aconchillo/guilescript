@@ -228,21 +228,27 @@
   (let* ((unit (current-unit))
          (table (unit-generated-names unit)))
     (or (hashq-ref table name)
-        (let* ((base (scheme->js-name (strip-generated-suffix name)))
-               (toplevel-scope (last (unit-scopes unit)))
-               (js (let lp ((i 0))
-                     (let ((candidate (if (zero? i)
-                                          base
-                                          (string-append base "_" (number->string i)))))
-                       (if (or (hash-ref (unit-js-names unit) candidate #f)
-                               (hash-ref toplevel-scope candidate #f)
-                               (js-reserved? candidate)
-                               (js-protected-global? candidate))
-                           (lp (+ i 1))
-                           candidate)))))
+        (let ((js (unique-name (scheme->js-name (strip-generated-suffix name))
+                               toplevel-name-taken?)))
           (hash-set! (unit-js-names unit) js name)
           (hashq-set! table name js)
           js))))
+
+;; BASE, or the first of BASE_1, BASE_2... that is not TAKEN?.
+(define (unique-name base taken?)
+  (let lp ((i 0))
+    (let ((candidate (if (zero? i) base (string-append base "_" (number->string i)))))
+      (if (taken? candidate)
+          (lp (+ i 1))
+          candidate))))
+
+;; Can't a new top-level variable be named CANDIDATE?
+(define (toplevel-name-taken? candidate)
+  (let ((unit (current-unit)))
+    (or (hash-ref (unit-js-names unit) candidate #f)
+        (hash-ref (last (unit-scopes unit)) candidate #f)
+        (js-reserved? candidate)
+        (js-protected-global? candidate))))
 
 (define (toplevel-scope?)
   (null? (cdr (unit-scopes (current-unit)))))
@@ -267,22 +273,17 @@
 ;; Declare a new variable in the current function scope. SOURCE is the
 ;; Scheme name (a symbol) or a JavaScript base name (a string).
 (define (declare-name! source)
-  (let ((base (if (string? source)
-                  source
-                  (scheme->js-name (strip-generated-suffix source)))))
-    (let lp ((i 0))
-      (let ((candidate (if (zero? i)
-                           base
-                           (string-append base "_" (number->string i)))))
-        (if (name-taken? candidate source)
-            (lp (+ i 1))
-            (let ((unit (current-unit)))
-              (hash-set! (car (unit-scopes unit)) candidate #t)
-              (when (toplevel-scope?)
-                (hash-set! (unit-form-scope unit) candidate #t))
-              (when (symbol? source)
-                (note-name-kind! candidate source))
-              candidate))))))
+  (let* ((unit (current-unit))
+         (name (unique-name (if (string? source)
+                                source
+                                (scheme->js-name (strip-generated-suffix source)))
+                            (cut name-taken? <> source))))
+    (hash-set! (car (unit-scopes unit)) name #t)
+    (when (toplevel-scope?)
+      (hash-set! (unit-form-scope unit) name #t))
+    (when (symbol? source)
+      (note-name-kind! name source))
+    name))
 
 (define (fresh-name base)
   (declare-name! base))
@@ -1042,17 +1043,11 @@
                                 '() x)))
     (for-each
      (lambda (helper)
-       (let ((base (helper-js-name helper)))
-         (let lp ((i 0))
-           (let ((candidate (if (zero? i) base (string-append base "_" (number->string i)))))
-             (if (or (hash-ref table candidate #f)
-                     (js-reserved? candidate)
-                     (js-protected-global? candidate))
-                 (lp (+ i 1))
-                 (begin
-                   ;; The owner is no Scheme name, so variables can't use it.
-                   (hash-set! table candidate (make-symbol base))
-                   (hashq-set! (unit-helper-names unit) helper candidate)))))))
+       (let* ((base (helper-js-name helper))
+              (name (unique-name base toplevel-name-taken?)))
+         ;; The owner is no Scheme name, so variables can't use it.
+         (hash-set! table name (make-symbol base))
+         (hashq-set! (unit-helper-names unit) helper name)))
      helpers)))
 
 (define (use-helper! helper)
@@ -1106,8 +1101,7 @@
          (exp (toplevel-define-exp x))
          (js (toplevel-js-name name))
          (export? (memq name (unit-exports unit)))
-         (mutable? (or (> (hashq-ref (unit-defined unit) name 0) 1)
-                       (hashq-ref (unit-assigned unit) name #f)))
+         (mutable? (toplevel-mutable? name))
          (wrap (lambda (stmt) (if export? `(export ,stmt) stmt))))
     (cond
      ((macro-definition? exp) #t)
