@@ -109,7 +109,15 @@
 (define (new-acc) (list 'acc))
 (define (emit! acc stmt) (set-cdr! acc (cons stmt (cdr acc))))
 (define (emit-all! acc stmts) (for-each (cut emit! acc <>) stmts))
-(define (acc-stmts acc) (reverse (cdr acc)))
+;; The statements in ACC, without the ones that can't be reached.
+(define (acc-stmts acc)
+  (let lp ((stmts (reverse (cdr acc))) (out '()))
+    (match stmts
+      (() (reverse out))
+      ((stmt . rest)
+       (if (exits? stmt)
+           (reverse (cons stmt out))
+           (lp rest (cons stmt out)))))))
 (define (acc-empty? acc) (null? (cdr acc)))
 
 ;;
