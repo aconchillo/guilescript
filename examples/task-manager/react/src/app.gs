@@ -158,7 +158,7 @@
        (div #:class-name "filters"
             ,(map (lambda (f)
                     (html (button #:key ,(car f)
-                                  #:class-name ,(if (equal? (car f) current-filter) "selected" "")
+                                  #:class-name ,(if (string=? (car f) current-filter) "selected" "")
                                   #:on-click ,(lambda (event) (set-filter! (car f)))
                                   ,(cadr f))))
                   filters))
