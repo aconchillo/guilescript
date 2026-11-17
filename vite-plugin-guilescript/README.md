@@ -39,7 +39,8 @@ map the compiled code back to the `.gs` files (in development and, with
 - `command`: the `guilescript` command (default: the `GUILESCRIPT`
   environment variable or `guilescript`).
 
-- `loadPath`: directories where GuileScript modules are also searched
-  (`guilescript -L`).
+- `loadPath`: directories where GuileScript modules (and Guile modules, e.g.
+  with macros) are also searched (`guilescript -L`), relative to the project
+  root.
 
 See `examples/vite` in the GuileScript repository for a complete example.

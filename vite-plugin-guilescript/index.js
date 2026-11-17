@@ -18,6 +18,7 @@
 // along with GuileScript. If not, see https://www.gnu.org/licenses/.
 
 import { execFile } from "node:child_process";
+import { resolve } from "node:path";
 
 /**
  * Vite (and Rollup) plugin that compiles GuileScript (.gs) files.
@@ -31,14 +32,19 @@ import { execFile } from "node:child_process";
  * @param {string} [options.command] The guilescript command (default: the
  *   GUILESCRIPT environment variable or "guilescript").
  * @param {string[]} [options.loadPath] Directories where GuileScript modules
- *   are also searched (guilescript -L).
+ *   (and Guile modules, e.g. with macros) are also searched (guilescript -L),
+ *   relative to the project root.
  */
 export default function guilescript(options = {}) {
   const command = options.command ?? process.env.GUILESCRIPT ?? "guilescript";
-  const loadPath = options.loadPath ?? [];
+  let root = process.cwd();
 
   return {
     name: "guilescript",
+
+    configResolved(config) {
+      root = config.root;
+    },
 
     async transform(_code, id) {
       const [file] = id.split("?", 1);
@@ -46,6 +52,7 @@ export default function guilescript(options = {}) {
         return null;
       }
 
+      const loadPath = (options.loadPath ?? []).map((dir) => resolve(root, dir));
       const args = [
         "--source-imports",
         "--source-map",
