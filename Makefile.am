@@ -23,7 +23,7 @@ SUBDIRS = \
 	language/javascript \
 	language/guilescript
 
-dist_bin_SCRIPTS = guilescript
+dist_bin_SCRIPTS = scripts/guilescript
 
 ACLOCAL_AMFLAGS = -I build-aux
 

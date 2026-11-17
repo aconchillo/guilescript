@@ -34,7 +34,7 @@ if ! command -v "$NODE" >/dev/null 2>&1; then
 fi
 
 GUILE_LOAD_PATH="$srcdir${GUILE_LOAD_PATH:+:$GUILE_LOAD_PATH}"
-GUILESCRIPT="$srcdir/guilescript"
+GUILESCRIPT="$srcdir/scripts/guilescript"
 export GUILE_LOAD_PATH GUILESCRIPT
 
 exec "$NODE" "$1"

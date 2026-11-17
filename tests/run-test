@@ -57,7 +57,7 @@ mkdir "$tmp/out"
 echo '{ "type": "module" }' > "$tmp/out/package.json"
 js="$tmp/out/$(basename "$file" .gs).js"
 
-"$srcdir/guilescript" -d "$tmp/out" --source-map "$file" 2> "$tmp/stderr"
+"$srcdir/scripts/guilescript" -d "$tmp/out" --source-map "$file" 2> "$tmp/stderr"
 status=$?
 cat "$tmp/stderr"
 
