@@ -238,6 +238,7 @@
   (match e
     (('num n) (js-number n))
     (('str s) (js-string-literal s))
+    (('regex pattern flags) (string-append "/" pattern "/" flags))
     (('bool b) (if b "true" "false"))
     (('null) "null")
     (('undefined) "undefined")

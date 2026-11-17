@@ -17,6 +17,15 @@
 (console-log #t #f #nil)
 ;; => true false null
 
+;; string->number is #f for anything that is not a number (including "").
+(define empty "")
+(console-log (string->number "-12.5") (string->number "1e3") (string->number empty)
+             (string->number " 42") (string->number "0x10") (string->number "abc"))
+;; => -12.5 1000 false false false false
+
+(console-log (string->number "ff" 16) (string->number "fg" 16) (string->number "101" 2))
+;; => 255 false 5
+
 ;; Symbols and characters are strings.
 (console-log 'hello-world #\x)
 ;; => hello-world x

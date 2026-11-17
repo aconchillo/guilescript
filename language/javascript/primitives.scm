@@ -408,11 +408,29 @@
      ((n) (call '(id "String") n))
      ((n radix) (method n "toString" radix)))))
 
+;; Like Scheme, invalid numbers (including "" and numbers with spaces) are
+;; #f: /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(s) ? Number(s) : false
+(define decimal-number-regex '(regex "^[+-]?(\\d+\\.?\\d*|\\.\\d+)(e[+-]?\\d+)?$" "i"))
+
+(define (radix-number-regex radix)
+  (let ((digits (if (<= radix 10)
+                    (format #f "0-~a" (1- radix))
+                    (format #f "0-9a-~a" (integer->char (+ (char->integer #\a) radix -11))))))
+    `(regex ,(format #f "^[+-]?[~a]+$" digits) "i")))
+
 (define-primitive! 'string->number 1 2
-  (simple-compiler
-   (case-lambda
-     ((s) (call '(id "Number") s))
-     ((s radix) (call '(id "parseInt") s radix)))))
+  (lambda (args til fresh)
+    (match args
+      ((s)
+       `(ternary ,(method decimal-number-regex "test" s) ,(call '(id "Number") s) (bool #f)))
+      ((s radix)
+       (match (and (const? (second til)) (const-exp (second til)))
+         (10 `(ternary ,(method decimal-number-regex "test" s) ,(call '(id "Number") s) (bool #f)))
+         ((? (lambda (r) (and (exact-integer? r) (<= 2 r 36))) r)
+          `(ternary ,(method (radix-number-regex r) "test" s) ,(call '(id "parseInt") s radix)
+                    (bool #f)))
+         (_ (call '(id "parseInt") s radix))))))
+  #:dup '(0))
 
 ;;
 ;; Types
