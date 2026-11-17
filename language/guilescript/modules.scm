@@ -29,7 +29,9 @@
 ;; (Guile would load the imported modules, i.e. run them):
 ;;
 ;; - GuileScript modules are imported with js-import, so the names they
-;;   export are imported from the JavaScript module.
+;;   export are imported from the JavaScript module. The import path is the
+;;   path of the compiled module (e.g. ./util.js) or, with source imports
+;;   (for bundler plugins), the path of the .gs file (e.g. ./util.gs).
 ;;
 ;; - Other modules are Guile modules and they are imported with use-modules
 ;;   (so their macros can be used).
@@ -50,10 +52,11 @@
             transform-module-form))
 
 (define-record-type <module-context>
-  (%make-module-context file load-path name root dependencies)
+  (%make-module-context file load-path source-imports? name root dependencies)
   module-context?
   (file module-context-file)
   (load-path module-context-load-path)
+  (source-imports? module-context-source-imports?)
   (name module-context-name set-module-context-name!)
   ;; The directory where module paths start.
   (root module-context-root set-module-context-root!)
@@ -62,8 +65,8 @@
 
 ;; FILE is the file being compiled and LOAD-PATH a list of directories where
 ;; GuileScript modules are also searched.
-(define (make-module-context file load-path)
-  (%make-module-context file load-path #f (dirname file) '()))
+(define* (make-module-context file load-path #:key (source-imports? #f))
+  (%make-module-context file load-path source-imports? #f (dirname file) '()))
 
 (define current-module-context (make-parameter #f))
 
@@ -139,18 +142,25 @@
               (delete-duplicates (filter symbol? exports))
               (lp (append exports (form-exports form)))))))))
 
-;; The import path of the module path TO from the module path FROM, e.g.
-;; "app/main" and "app/ui/button" => "./ui/button.js".
-(define (relative-import-path from to)
-  (let lp ((from (drop-right (string-split from #\/) 1))
-           (to (string-split to #\/)))
+;; The relative path from the directory FROM to TO (lists of path
+;; components), e.g. ("app") and ("app" "ui" "button.js") => "./ui/button.js".
+(define (relative-path from to)
+  (let lp ((from from) (to to))
     (if (and (pair? from) (pair? (cdr to)) (string=? (car from) (car to)))
         (lp (cdr from) (cdr to))
         (string-append (if (null? from)
                            "./"
                            (string-concatenate (map (const "../") from)))
-                       (string-join to "/")
-                       ".js"))))
+                       (string-join to "/")))))
+
+;; The import path of the module NAME (in FILE) from the module being
+;; compiled.
+(define (import-path ctx name file)
+  (if (module-context-source-imports? ctx)
+      (relative-path (string-split (dirname (canonicalize-path (module-context-file ctx))) #\/)
+                     (string-split (canonicalize-path file) #\/))
+      (relative-path (drop-right (string-split (module-context-path ctx) #\/) 1)
+                     (string-split (string-append (module-path name) ".js") #\/))))
 
 (define (spec-module-name spec src)
   (match spec
@@ -201,7 +211,7 @@
               (unless (assoc name (%module-context-dependencies ctx))
                 (set-module-context-dependencies!
                  ctx (cons (cons name file) (%module-context-dependencies ctx))))
-              `(js-import ,(relative-import-path (module-context-path ctx) (module-path name))
+              `(js-import ,(import-path ctx name file)
                           #:rename ',(spec-imports spec (module-exports file) src))))
           gs-specs))))
 

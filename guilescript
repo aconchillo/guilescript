@@ -46,6 +46,8 @@ Compile GuileScript files into JavaScript.
                          they import into DIR (e.g. the module (app util)
                          into DIR/app/util.js)
   -L, --load-path=DIR    also search GuileScript modules in DIR
+      --source-imports   import GuileScript modules by the path of their
+                         .gs file (e.g. ./util.gs), for bundler plugins
   -h, --help             display this help and exit
 " port))
 
@@ -53,6 +55,7 @@ Compile GuileScript files into JavaScript.
   '((output (single-char #\o) (value #t))
     (output-dir (single-char #\d) (value #t))
     (load-path (single-char #\L) (value #t))
+    (source-imports (value #f))
     (help (single-char #\h) (value #f))))
 
 (define (fail fmt . args)
@@ -123,7 +126,9 @@ Compile GuileScript files into JavaScript.
            (next)))
       ((file)
        (let ((js (call-with-compile-errors file
-                   (lambda () (compile-file file #:load-path load-path)))))
+                   (lambda ()
+                     (compile-file file #:load-path load-path
+                                   #:source-imports? (option-ref options 'source-imports #f))))))
          (if output
              (call-with-output-file output (lambda (p) (display js p)))
              (display js))))

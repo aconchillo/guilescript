@@ -42,9 +42,11 @@
 ;; Compile FILENAME into JavaScript. Returns the JavaScript code, the path of
 ;; the compiled module (without extension, e.g. "app/util" for the module
 ;; (app util)) and the GuileScript modules it imports: ((NAME . FILE) ...).
-;; GuileScript modules are also searched in the LOAD-PATH directories.
-(define* (compile-module-file filename #:key (load-path '()))
-  (let ((ctx (make-module-context filename load-path)))
+;; GuileScript modules are also searched in the LOAD-PATH directories. With
+;; SOURCE-IMPORTS?, GuileScript modules are imported by the path of their .gs
+;; file (for bundler plugins) instead of the path of the compiled module.
+(define* (compile-module-file filename #:key (load-path '()) (source-imports? #f))
+  (let ((ctx (make-module-context filename load-path #:source-imports? source-imports?)))
     (call-with-source-file filename
       (lambda ()
         (parameterize ((current-module-context ctx))
@@ -62,6 +64,7 @@
                         (module-context-path ctx)
                         (module-context-dependencies ctx))))))))))
 
-(define* (compile-file filename #:key (load-path '()))
-  (call-with-values (lambda () (compile-module-file filename #:load-path load-path))
+(define* (compile-file filename #:key (load-path '()) (source-imports? #f))
+  (call-with-values (lambda () (compile-module-file filename #:load-path load-path
+                                                    #:source-imports? source-imports?))
     (lambda (js path dependencies) js)))
