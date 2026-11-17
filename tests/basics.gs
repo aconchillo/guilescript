@@ -57,7 +57,10 @@
 (console-log (number->string 255 16) (string->number "42") (number? 1) (integer? 1.5))
 ;; => ff 42 true false
 
-;; GuileScript uses JavaScript truthiness: 0 and "" are false.
+;; Like in Scheme, only #f, #nil and undefined are false: 0 and "" are true.
 (define (truthy x) (if x 'yes 'no))
 (console-log (truthy 0) (truthy "") (truthy '()) (truthy #f) (truthy 1))
-;; => no no yes no yes
+;; => yes yes yes no yes
+
+(console-log (truthy #nil) (truthy (hash-ref (make-hash-table) 'none)) (not 0) (not #f))
+;; => no no false true

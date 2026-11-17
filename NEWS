@@ -7,11 +7,15 @@
     immediately invoked functions.
 
   - GuileScript now explicitly uses JavaScript data and semantics: lists and
-    vectors are arrays, symbols and characters are strings, hash tables are
-    Maps and conditionals use JavaScript truthiness. JavaScript has no pairs,
-    so quoted data is always made of arrays and dotted pairs (e.g. quoted
-    association lists) are a compilation error: objects are created with
-    js-obj, and assoc-ref reads their properties.
+    vectors are arrays, symbols and characters are strings and hash tables
+    are Maps. JavaScript has no pairs, so quoted data is always made of
+    arrays and dotted pairs (e.g. quoted association lists) are a
+    compilation error: objects are created with js-obj, and assoc-ref reads
+    their properties.
+
+  - Like in Scheme, only #f, #nil and undefined are false: 0 and "" are
+    true. Tests that are not known to be booleans are compiled into
+    x != null && x !== false.
 
   - Scheme names are converted to camelCase JavaScript names (log-counter =>
     logCounter, even? => isEven, set-x! => setX). Reserved words are

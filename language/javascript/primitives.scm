@@ -25,7 +25,8 @@
 ;; GuileScript uses JavaScript data and semantics: lists and vectors are
 ;; arrays, symbols and characters are strings and hash tables are Maps.
 ;; JavaScript has no pairs, so there are no association lists: objects are
-;; created with js-obj.
+;; created with js-obj. Like in Scheme, only #f, #nil (null) and undefined
+;; are false (see truth).
 ;;
 ;; Each primitive has a compiler procedure that receives:
 ;;
@@ -59,6 +60,8 @@
             js-path
             call-function
             js-negate
+            boolean-expr?
+            truth
             substitute
             constant-name))
 
@@ -267,10 +270,82 @@
 
 (define (js-negate e)
   (match e
+    (('bool b) `(bool ,(not b)))
     (('unop "!" x) x)
     (('binop "===" a b) `(binop "!==" ,a ,b))
     (('binop "!==" a b) `(binop "===" ,a ,b))
+    (('binop "==" a b) `(binop "!=" ,a ,b))
+    (('binop "!=" a b) `(binop "==" ,a ,b))
+    ;; x != null && x !== false => x == null || x === false
+    (('binop "&&" (and a ('binop (or "!=" "!==") . _)) (and b ('binop (or "!=" "!==") . _)))
+     `(binop "||" ,(js-negate a) ,(js-negate b)))
     (_ `(unop "!" ,e))))
+
+;;
+;; Truthiness. Like in Scheme, only #f, #nil (null) and undefined are false:
+;; 0, "" and NaN are true.
+;;
+
+;; Functions and variables that are booleans: GuileScript predicates (even?
+;; => isEven, has-children? => hasChildren) and JavaScript's isArray, has,
+;; includes...
+(define (boolean-js-name? name)
+  (define (prefixed? prefix)
+    (let ((n (string-length prefix)))
+      (and (string-prefix? prefix name)
+           (> (string-length name) n)
+           (char-upper-case? (string-ref name n)))))
+  (or (member name '("is" "has" "includes" "startsWith" "endsWith" "some" "every" "test"))
+      (prefixed? "is")
+      (prefixed? "has")))
+
+;; Is the JavaScript expression E always a boolean?
+(define (boolean-expr? e)
+  (match e
+    (('bool _) #t)
+    (('unop "!" _) #t)
+    (('binop (or "===" "!==" "==" "!=" "<" "<=" ">" ">=" "instanceof" "in") _ _) #t)
+    (('binop (or "&&" "||") a b) (and (boolean-expr? a) (boolean-expr? b)))
+    (('ternary _ a b) (and (boolean-expr? a) (boolean-expr? b)))
+    ((or ('id name) ('dot _ name)) (boolean-js-name? name))
+    (('call (or ('id name) ('dot _ name)) . _) (boolean-js-name? name))
+    (_ #f)))
+
+;; Variables and property accesses (a.b.c) can be read twice.
+(define (variable-access? e)
+  (match e
+    (('id _) #t)
+    (('dot obj _) (variable-access? obj))
+    (_ #f)))
+
+;; A JavaScript expression that is true when E is true in Scheme (it is not
+;; #f, #nil or undefined): E itself if it's a boolean, x != null && x !==
+;; false for variables or (e ?? false) !== false.
+(define (truth e)
+  (match e
+    ((? boolean-expr?) e)
+    ((or ('num _) ('str _) ('arrow . _) ('function . _)) '(bool #t))
+    ((or ('null) ('undefined)) '(bool #f))
+    ((? variable-access?)
+     `(binop "&&" (binop "!=" ,e (null)) (binop "!==" ,e (bool #f))))
+    (_ `(binop "!==" (binop "??" ,e (bool #f)) (bool #f)))))
+
+;; Return statements in STMTS (not in nested functions) return the Scheme
+;; truth of their value.
+(define (truth-returns stmts)
+  (let walk ((e stmts))
+    (match e
+      (('return #f) e)
+      (('return v) `(return ,(truth v)))
+      (((or 'arrow 'function 'async 'fun-decl 'class) . _) e)
+      ((a . b) (cons (walk a) (walk b)))
+      (_ e))))
+
+;; A callback that is used as a test (e.g. by filter): it returns a boolean.
+(define (predicate-callback f f-til fresh)
+  (match (callback f f-til 1 fresh)
+    (('arrow params body) `(arrow ,params ,(truth-returns body)))
+    (f f)))
 
 ;; A copy of the array E, unless E is already a new array.
 (define (copy-array e)
@@ -371,7 +446,7 @@
 (define-comparison! '(<= char<=? string<=?) "<=")
 (define-comparison! '(>= char>=? string>=?) ">=")
 
-(define-inline not (x) (js-negate x))
+(define-inline not (x) (js-negate (truth x)))
 (define-inline 1+ (x) (binop "+" x (num 1)))
 (define-inline 1- (x) (binop "-" x (num 1)))
 (define-inline zero? (x) (binop "===" x (num 0)))
@@ -614,11 +689,12 @@
             `(arrow ((param ,(fresh "_")) (param ,i)) ((return ,value))))))
   #:dup '(1 2))
 
-(define (define-callback-method! name js-method)
+;; Methods that call a predicate: filter, some...
+(define (define-predicate-method! name js-method)
   (define-primitive! name 2 2
     (lambda (args til fresh)
       (match args
-        ((f l) (method l js-method (callback f (first til) 1 fresh)))))
+        ((f l) (method l js-method (predicate-callback f (first til) fresh)))))
     #:dup '(0)))
 
 ;; With several lists, (map f l1 l2 ...) => l1.map((x, i) => f(x, l2[i], ...)).
@@ -653,10 +729,10 @@
          (_ #t))
        (method l "forEach" (lists-callback f (first til) ls fresh)))))
   #:dup lists-dup)
-(define-callback-method! 'filter "filter")
-(define-callback-method! 'any "some")
-(define-callback-method! 'every "every")
-(define-callback-method! 'find "find")
+(define-predicate-method! 'filter "filter")
+(define-predicate-method! 'any "some")
+(define-predicate-method! 'every "every")
+(define-predicate-method! 'find "find")
 
 (define-primitive! 'remove 2 2
   (lambda (args til fresh)
@@ -664,13 +740,13 @@
       ((f l)
        (let ((x (fresh "x")))
          (method l "filter"
-                 (arrow (list x) (js-negate (call-callback f (first til) `((id ,x)) fresh))))))))
+                 (arrow (list x) (js-negate (truth (call-callback f (first til) `((id ,x)) fresh)))))))))
   #:dup '(0))
 
 (define-primitive! 'count 2 2
   (lambda (args til fresh)
     (match args
-      ((f l) (prop (method l "filter" (callback f (first til) 1 fresh)) "length"))))
+      ((f l) (prop (method l "filter" (predicate-callback f (first til) fresh)) "length"))))
   #:dup '(0))
 
 (define-primitive! 'delete 2 2
@@ -710,7 +786,7 @@
        (let* ((a (fresh "a"))
               (b (fresh "b"))
               (less? (lambda (x y)
-                       (call-callback less (second til) (list `(id ,x) `(id ,y)) fresh))))
+                       (truth (call-callback less (second til) (list `(id ,x) `(id ,y)) fresh)))))
          (method (copy-array l) "sort"
                  (arrow (list a b)
                         `(ternary ,(less? a b) ,(num -1)

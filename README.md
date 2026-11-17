@@ -379,7 +379,8 @@ error, so typos are found at compile time instead of at runtime.
 
 ## Data and semantics
 
-GuileScript uses JavaScript data types and JavaScript semantics.
+GuileScript uses JavaScript data types, so values are passed to and from
+JavaScript as they are.
 
 | GuileScript                        | JavaScript                      |
 |------------------------------------|---------------------------------|
@@ -399,7 +400,12 @@ GuileScript uses JavaScript data types and JavaScript semantics.
 
 A few things to keep in mind:
 
-- Conditionals use JavaScript truthiness, so `0` and `""` are false.
+- Like in Scheme, only `#f`, `#nil` and `undefined` are false: `0` and `""`
+  are true (use `null?`, `string-null?` or `zero?` to check for them).
+  `undefined` is false so that "not found" (`find`, `hash-ref`, a missing
+  property) works like `#f`. When the compiler can't tell that a test is a
+  boolean, it checks `x != null && x !== false`. Comparisons, predicates
+  and names that end in `?` (`isX` and `hasX` in JavaScript) are booleans.
 
 - Lists and vectors are both arrays, so `cons` and `cdr` copy the array.
 

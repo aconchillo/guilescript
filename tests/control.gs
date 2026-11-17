@@ -18,10 +18,17 @@
 (console-log (kind 2) (kind 'a) (kind 9))
 ;; => low letter other
 
-;; and/or follow JavaScript truthiness.
-(define (first-truthy a b c) (or a b c))
-(console-log (first-truthy #f 0 "x") (first-truthy #f #f #f))
-;; => x false
+;; Like in Scheme, or returns the first value that is not #f (0 is true).
+(define (first-true a b c) (or a b c))
+(console-log (first-true #f 0 "x") (first-true #f #f #f) (and 0 "") (or (> 1 2) 'z))
+;; => 0 false  z
+
+(define (positive-or-zero n) (or (and (positive? n) n) 0))
+(console-log (positive-or-zero 5) (positive-or-zero -5))
+;; => 5 0
+
+(console-log (filter (lambda (x) x) '(0 #f "" 1)) (remove (lambda (x) x) '(0 #f)))
+;; => [ 0, '', 1 ] [ false ]
 
 (define (both a b) (and a b))
 (console-log (both 1 2) (both #f 2))

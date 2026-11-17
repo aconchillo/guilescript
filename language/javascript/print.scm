@@ -115,7 +115,7 @@
 
 (define (binop-precedence op)
   (match op
-    ("||" 4) ("&&" 5) ("|" 6) ("^" 7) ("&" 8)
+    ((or "||" "??") 4) ("&&" 5) ("|" 6) ("^" 7) ("&" 8)
     ((or "==" "!=" "===" "!==") 9)
     ((or "<" ">" "<=" ">=" "instanceof" "in") 10)
     ((or "<<" ">>" ">>>") 11)
@@ -273,11 +273,19 @@
        (if (string=? op "**")
            (string-append (expr a 16 indent) " ** " (expr b p indent))
            ;; && and || are associative: a || (b || c) => a || b || c
-           (let ((right-prec (if (and (member op '("&&" "||"))
-                                      (match b (('binop (? (cut string=? <> op)) . _) #t) (_ #f)))
-                                 p
-                                 (+ p 1))))
-             (string-append (expr a p indent) " " op " " (expr b right-prec indent))))))
+           (let* ((right-prec (if (and (member op '("&&" "||"))
+                                       (match b (('binop (? (cut string=? <> op)) . _) #t) (_ #f)))
+                                  p
+                                  (+ p 1)))
+                  ;; ?? can't be mixed with && or || without parentheses.
+                  (nullish-prec (lambda (operand prec)
+                                  (match (list op operand)
+                                    ((or ("??" ('binop (or "&&" "||") . _))
+                                         ((or "&&" "||") ('binop "??" . _)))
+                                     99)
+                                    (_ prec)))))
+             (string-append (expr a (nullish-prec a p) indent) " " op " "
+                            (expr b (nullish-prec b right-prec) indent))))))
     (('unop op a)
      (let ((operand (expr a 15 indent)))
        (string-append op
