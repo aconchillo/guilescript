@@ -41,6 +41,10 @@
     #:select or #:prefix). Other procedures from Guile modules are a
     compilation error.
 
+  - define-record-type (R7RS, SRFI-9) is compiled into a JavaScript class,
+    and calls to the record procedures into JavaScript expressions (e.g.
+    (point-x p) => p.x).
+
   - guard (R7RS) is compiled into try/catch. New error-object? and
     error-object-message.
 

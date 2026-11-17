@@ -28,6 +28,7 @@
 ;;   *debug*      -> debug
 ;;   %internal    -> _internal
 ;;   new          -> new_         (JavaScript reserved words)
+;;   <http-request> -> HttpRequest (types, e.g. record types)
 
 ;;; Code:
 
@@ -176,8 +177,20 @@
 ;; Convert a Scheme identifier (symbol or string) into a JavaScript
 ;; identifier. With #:property? #t the result is used as a property name, so
 ;; reserved words are left untouched.
+(define (type-name? s)
+  (and (> (string-length s) 2)
+       (string-prefix? "<" s)
+       (string-suffix? ">" s)))
+
 (define* (scheme->js-name name #:key (property? #f))
-  (let* ((s (if (symbol? name) (symbol->string name) name))
+  (let ((s (if (symbol? name) (symbol->string name) name)))
+    (if (type-name? s)
+        (capitalize (scheme->js-name (substring s 1 (- (string-length s) 1))
+                                     #:property? #t))
+        (identifier->js-name s property?))))
+
+(define (identifier->js-name s property?)
+  (let* ((s s)
          (internal? (and (> (string-length s) 1)
                          (char=? (string-ref s 0) #\%)))
          (s (if internal? (substring s 1) s))

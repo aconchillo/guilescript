@@ -172,7 +172,9 @@ Some common modules:
 |-------------------------------------------------+------------------------------------------------|
 | (srfi srfi-1), (srfi srfi-13)                   | the built-in procedures (fold, iota, ...)      |
 |-------------------------------------------------+------------------------------------------------|
-| (srfi srfi-9), (ice-9 receive), (srfi srfi-11)  | not yet (records and multiple values)          |
+| (srfi srfi-9)                                   | define-record-type (GuileScript's own)         |
+|-------------------------------------------------+------------------------------------------------|
+| (ice-9 receive), (srfi srfi-11)                 | not yet (multiple values)                      |
 |-------------------------------------------------+------------------------------------------------|
 | (ice-9 rdelim), (ice-9 textual-ports)           | never (ports)                                  |
 |-------------------------------------------------+------------------------------------------------|
@@ -202,6 +204,8 @@ naturally from both sides.
 | *debug*        | debug             |
 |----------------+-------------------|
 | new            | new_              |
+|----------------+-------------------|
+| <http-request> | HttpRequest       |
 |----------------+-------------------|
 
 It is a compilation error if two different Scheme names end up with the same
@@ -245,6 +249,8 @@ GuileScript uses JavaScript data types and JavaScript semantics.
 | '((name . "Ann") (age . 30))     | { name: "Ann", age: 30 }     |
 |----------------------------------+------------------------------|
 | (make-hash-table)                | new Map()                    |
+|----------------------------------+------------------------------|
+| (define-record-type <point> ...) | class Point { ... }          |
 |----------------------------------+------------------------------|
 
 A few things to keep in mind:
@@ -310,6 +316,41 @@ matches, the exception is raised again.
 Named =let= loops, =do= loops and functions that call themselves in tail
 position are compiled into =while= loops, so they don't grow the stack. Other
 tail calls (e.g. mutually recursive functions) are regular JavaScript calls.
+
+* Records
+
+=define-record-type= (R7RS, SRFI-9) defines a JavaScript class, and calls to
+the record procedures are compiled into JavaScript expressions:
+
+#+BEGIN_SRC scheme
+(define-record-type <point>
+  (make-point x y)
+  point?
+  (x point-x set-point-x!)
+  (y point-y))
+
+(define p (make-point 1 2))
+(set-point-x! p (+ (point-x p) 1))
+#+END_SRC
+
+#+BEGIN_SRC javascript
+class Point {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+  }
+}
+
+const p = new Point(1, 2);
+p.x = p.x + 1;
+#+END_SRC
+
+The record type (=<point>=) is the class (=Point=). The record procedures are
+only defined as functions if they are exported or used as values (e.g.
+=(map point-x points)=).
+
+GuileScript's =define-record-type= and =guard= are always used, even if a
+module providing Guile's versions (e.g. =(srfi srfi-9)=) is imported.
 
 * JavaScript interoperability
 

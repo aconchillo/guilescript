@@ -67,7 +67,8 @@
 
 (define-record-type <unit>
   (make-unit env bindings defined assigned exports imported js-names
-             lexical-assigned inline-loops emitted gensym-names scopes form-scope)
+             lexical-assigned inline-loops emitted gensym-names scopes form-scope
+             records value-refs)
   unit?
   (env unit-env)                        ; module where the code was expanded
   (bindings unit-bindings)              ; name -> Guile binding (memoized)
@@ -83,7 +84,11 @@
   (scopes unit-scopes set-unit-scopes!) ; one table per function scope
   ;; Variables declared at the top level by the current top-level form. The
   ;; last table in scopes has all the variables declared at the top level.
-  (form-scope unit-form-scope set-unit-form-scope!))
+  (form-scope unit-form-scope set-unit-form-scope!)
+  ;; Record definitions: name or gensym -> the %js-record-* call.
+  (records unit-records)
+  ;; Names and gensyms used as values (not only called).
+  (value-refs unit-value-refs))
 
 (define current-unit (make-parameter #f))
 
@@ -92,7 +97,7 @@
              (make-hash-table) (make-hash-table) '() (make-hash-table)
              (make-hash-table) (make-hash-table) (make-hash-table)
              (make-hash-table) (make-hash-table) (list (make-hash-table))
-             (make-hash-table)))
+             (make-hash-table) (make-hash-table) (make-hash-table)))
 
 (define (user-defined? name)
   (let ((unit (current-unit)))
@@ -288,6 +293,41 @@
                      (lambda-case-body (lambda-body f))))
               (call-args x)))
 
+;; define-record-type expands into definitions of calls to %js-record-type,
+;; %js-record-constructor, etc. (see (language guilescript prelude)).
+(define (record-call-kind x)
+  (and (call? x)
+       (let ((proc (call-proc x)))
+         (any (match-lambda
+                ((name . kind) (and (named-ref? proc name) kind)))
+              '((%js-record-type . type)
+                (%js-record-constructor . constructor)
+                (%js-record-predicate . predicate)
+                (%js-record-accessor . accessor)
+                (%js-record-modifier . modifier))))))
+
+(define (toplevel-mutable? name)
+  (let ((unit (current-unit)))
+    (or (> (hashq-ref (unit-defined unit) name 0) 1)
+        (hashq-ref (unit-assigned unit) name #f))))
+
+(define (value-ref? key)
+  (hashq-ref (unit-value-refs (current-unit)) key #f))
+
+;; The record procedure definition (a %js-record-* call) PROC refers to, if
+;; calls to it can be inlined.
+(define (record-procedure-for proc)
+  (let* ((records (unit-records (current-unit)))
+         (def (cond
+               ((toplevel-ref? proc)
+                (and (not (toplevel-mutable? (toplevel-ref-name proc)))
+                     (hashq-ref records (toplevel-ref-name proc) #f)))
+               ((lexical-ref? proc)
+                (and (not (lexical-assigned? (lexical-ref-gensym proc)))
+                     (hashq-ref records (lexical-ref-gensym proc) #f)))
+               (else #f))))
+    (and def (not (eq? (record-call-kind def) 'type)) def)))
+
 ;; (use-modules ...) expands into a call to process-use-modules.
 (define (use-modules-form? x)
   (and (call? x) (named-ref? (call-proc x) 'process-use-modules)))
@@ -454,9 +494,28 @@
               (unit-exports unit))))
 
 (define (analyze-form! x)
-  (let ((unit (current-unit)))
+  (let ((unit (current-unit))
+        (called (make-hash-table)))
+    ;; References in call position.
+    (tree-il-fold (lambda (y seed)
+                    (when (call? y) (hashq-set! called (call-proc y) #t))
+                    seed)
+                  (lambda (y seed) seed)
+                  #f x)
     (tree-il-fold
      (lambda (y seed)
+       (cond
+        ((hashq-ref called y) #t)
+        ((toplevel-ref? y) (hashq-set! (unit-value-refs unit) (toplevel-ref-name y) #t))
+        ((lexical-ref? y) (hashq-set! (unit-value-refs unit) (lexical-ref-gensym y) #t)))
+       (cond
+        ((and (toplevel-define? y) (record-call-kind (toplevel-define-exp y)))
+         (hashq-set! (unit-records unit) (toplevel-define-name y) (toplevel-define-exp y)))
+        ((letrec? y)
+         (for-each (lambda (gensym val)
+                     (when (record-call-kind val)
+                       (hashq-set! (unit-records unit) gensym val)))
+                   (letrec-gensyms y) (letrec-vals y))))
        (cond
         ((and (not (eq? y x)) (or (js-import-form? y) (js-global-form? y)))
          (note-location! (or (tree-il-src y) (first-user-location y)))
@@ -773,6 +832,15 @@
      ((hashq-ref (unit-emitted unit) name #f)
       ;; A redefinition is just an assignment.
       (compile-assignment! js exp acc))
+     ((and (eq? (record-call-kind exp) 'type) (not mutable?))
+      (hashq-set! (unit-emitted unit) name #t)
+      (emit! acc (wrap (compile-record-class js exp))))
+     ((and (record-call-kind exp) (not mutable?))
+      ;; Calls to record procedures are inlined, so they are only defined
+      ;; if they are exported or used as values.
+      (hashq-set! (unit-emitted unit) name #t)
+      (when (or export? (value-ref? name))
+        (emit! acc (wrap (compile-record-function js exp acc)))))
      (else
       (hashq-set! (unit-emitted unit) name #t)
       (if (and (lambda? exp) (not mutable?))
@@ -829,10 +897,100 @@
   (let* ((gensyms (letrec-gensyms x))
          (names (map-in-order bind! gensyms (letrec-names x))))
     (for-each (lambda (gensym name val)
-                (if (and (lambda? val) (not (lexical-assigned? gensym)))
-                    (emit! acc (compile-function-declaration name val `(lexical . ,gensym)))
-                    (compile-declaration! (binding-kind gensym) name val acc)))
+                (cond
+                 ((and (lambda? val) (not (lexical-assigned? gensym)))
+                  (emit! acc (compile-function-declaration name val `(lexical . ,gensym))))
+                 ((and (eq? (record-call-kind val) 'type) (not (lexical-assigned? gensym)))
+                  (emit! acc (compile-record-class name val)))
+                 ((and (record-call-kind val) (not (lexical-assigned? gensym)))
+                  (when (value-ref? gensym)
+                    (emit! acc (compile-record-function name val acc))))
+                 (else
+                  (compile-declaration! (binding-kind gensym) name val acc))))
               gensyms names (letrec-vals x))))
+
+;;
+;; Records
+;;
+
+(define (field-js-name field)
+  (scheme->js-name field #:property? #t))
+
+;; (%js-record-type 'type '(constructor-field ...) '(field ...)) =>
+;;
+;;   class Type {
+;;     constructor(constructor-field, ...) { this.field = ...; ... }
+;;   }
+(define (compile-record-class name def)
+  (match (call-args def)
+    ((_ (? const? constructor-fields) (? const? fields))
+     (call-with-function-scope
+      (lambda ()
+        (let ((params (map-in-order (lambda (field) (cons field (declare-name! field)))
+                                    (const-exp constructor-fields))))
+          `(class ,name
+             ((constructor
+               ,(map (lambda (p) `(param ,(cdr p))) params)
+               ,(map (lambda (field)
+                       `(expr-stmt
+                         (assign (dot (this) ,(field-js-name field))
+                                 ,(match (assq field params)
+                                    ((_ . param) `(id ,param))
+                                    (#f '(undefined))))))
+                     (const-exp fields)))))))))
+    (_ (compile-error "invalid record type definition"))))
+
+;; A call to the record procedure defined by DEF (a %js-record-* call).
+(define (compile-record-call def args acc)
+  (define (check-arity n)
+    (unless (= n (length args))
+      (compile-error "wrong number of arguments to a record procedure")))
+  (match (cons (record-call-kind def) (call-args def))
+    (('constructor type (? const? fields))
+     (check-arity (length (const-exp fields)))
+     (match (compile-exprs (cons type args) acc)
+       ((type . exprs) `(new ,type ,@exprs))))
+    (('predicate type)
+     (check-arity 1)
+     (match (compile-exprs (cons type args) acc)
+       ((type obj) `(binop "instanceof" ,obj ,type))))
+    (('accessor _ (? const? field))
+     (check-arity 1)
+     `(dot ,(compile-value (car args) acc) ,(field-js-name (const-exp field))))
+    (('modifier _ (? const? field))
+     (check-arity 2)
+     (match (compile-exprs args acc)
+       ((obj value) `(assign (dot ,obj ,(field-js-name (const-exp field))) ,value))))
+    (_ (compile-error "invalid record definition"))))
+
+;; The record procedure defined by DEF as a function: (values PARAMS BODY).
+(define (record-function def acc)
+  (let ((type (compile-value (car (call-args def)) acc)))
+    (call-with-function-scope
+     (lambda ()
+       (match (cons (record-call-kind def) (call-args def))
+         (('constructor _ (? const? fields))
+          (let ((params (map-in-order declare-name! (const-exp fields))))
+            (values (map (lambda (p) `(param ,p)) params)
+                    `((return (new ,type ,@(map (lambda (p) `(id ,p)) params)))))))
+         (('predicate _)
+          (let ((obj (fresh-name "obj")))
+            (values `((param ,obj)) `((return (binop "instanceof" (id ,obj) ,type))))))
+         (('accessor _ (? const? field))
+          (let ((obj (fresh-name "obj")))
+            (values `((param ,obj))
+                    `((return (dot (id ,obj) ,(field-js-name (const-exp field))))))))
+         (('modifier _ (? const? field))
+          (let ((obj (fresh-name "obj"))
+                (value (fresh-name "value")))
+            (values `((param ,obj) (param ,value))
+                    `((expr-stmt (assign (dot (id ,obj) ,(field-js-name (const-exp field)))
+                                         (id ,value)))))))
+         (_ (compile-error "invalid record definition")))))))
+
+(define (compile-record-function name def acc)
+  (let-values (((params body) (record-function def acc)))
+    `(fun-decl ,name ,params ,body)))
 
 ;; (let ((t A)) (if t t B)) is what (or A B) expands to.
 (define (or-pattern x)
@@ -1455,6 +1613,8 @@
      ((primitive-for proc)
       => (lambda (prim) (compile-primitive-call prim args acc)))
      ((named-ref? proc 'apply) (compile-apply args acc))
+     ((record-procedure-for proc)
+      => (lambda (def) (compile-record-call def args acc)))
      ((method-ref proc)
       => (lambda (method) (compile-method-call method args acc)))
      ((property-ref proc)

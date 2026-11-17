@@ -23,7 +23,7 @@
 ;;
 ;; Expressions:
 ;;
-;;   (num N) (str S) (bool B) (null) (undefined) (id NAME)
+;;   (num N) (str S) (bool B) (null) (undefined) (id NAME) (this)
 ;;   (array ELT ...)            ELT can be (spread E)
 ;;   (object (KEY . E) ...)     KEY is a string or (computed E); an entry
 ;;                              can also be (spread E)
@@ -42,6 +42,7 @@
 ;;
 ;;   (expr-stmt E) (decl KIND NAME E) (fun-decl NAME PARAMS STMTS)
 ;;   (async-fun-decl NAME PARAMS STMTS)
+;;   (class NAME ((constructor PARAMS STMTS)))
 ;;   (return E) (if T STMTS STMTS) (while LABEL STMTS) (break LABEL)
 ;;   (continue LABEL) (throw E) (try STMTS NAME STMTS) (block STMTS) (export STMT)
 ;;   (export-names NAMES) (import FROM DEFAULT NAMESPACE NAMES)
@@ -192,6 +193,7 @@
     (('bool b) (if b "true" "false"))
     (('null) "null")
     (('undefined) "undefined")
+    (('this) "this")
     (('id name) name)
     (('array . elts)
      (bracketed "[" "]" (map (lambda (x) (element x (+ indent 1))) elts) indent #f))
@@ -315,6 +317,16 @@
       (('fun-decl name params body)
        (string-append pad "function " name (parameters params indent) " "
                       (block body indent) "\n"))
+      (('class name members)
+       (string-append pad "class " name " {\n"
+                      (string-concatenate
+                       (map (match-lambda
+                              (('constructor params body)
+                               (string-append (indent-string (+ indent 1)) "constructor"
+                                              (parameters params (+ indent 1)) " "
+                                              (block body (+ indent 1)) "\n")))
+                            members))
+                      pad "}\n"))
       (('async-fun-decl name params body)
        (string-append pad "async function " name (parameters params indent) " "
                       (block body indent) "\n"))

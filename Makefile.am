@@ -54,6 +54,7 @@ TESTS = \
 	tests/error-optional-key.gs \
 	tests/error-parameterize.gs \
 	tests/error-property.gs \
+	tests/error-record-arity.gs \
 	tests/error-setter.gs \
 	tests/error-undeclared.gs \
 	tests/functions.gs \
@@ -66,6 +67,7 @@ TESTS = \
 	tests/modules.gs \
 	tests/names.gs \
 	tests/prelude.gs \
+	tests/records.gs \
 	tests/strings.gs \
 	$(EXAMPLES)
 
