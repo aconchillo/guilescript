@@ -36,6 +36,7 @@
 ;; => 12 6
 
 ;; No matching pattern throws an Error.
+(js-global process)
 (js-invoke process 'on "uncaughtException"
            (lambda (e) (console-log "caught:" (js-ref e 'message))))
 

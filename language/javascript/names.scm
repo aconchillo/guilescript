@@ -42,7 +42,8 @@
             js-identifier-name?
             js-identifier?
             js-reserved?
-            js-protected-global?))
+            js-protected-global?
+            js-standard-global?))
 
 ;; Words that can never be used as a variable name.
 (define %reserved-words
@@ -65,14 +66,38 @@
     (for-each (lambda (s) (hash-set! table s #t)) strings)
     table))
 
+;; Globals that can be used without being declared with js-global: the
+;; ECMAScript ones and the ones available both in browsers and Node.js.
+(define %standard-globals
+  '("globalThis" "Infinity" "NaN" "undefined" "isFinite" "isNaN" "parseFloat"
+    "parseInt" "decodeURI" "decodeURIComponent" "encodeURI"
+    "encodeURIComponent" "AggregateError" "Array" "ArrayBuffer" "Atomics"
+    "BigInt" "BigInt64Array" "BigUint64Array" "Boolean" "DataView" "Date"
+    "Error" "EvalError" "FinalizationRegistry" "Float32Array" "Float64Array"
+    "Function" "Int8Array" "Int16Array" "Int32Array" "Intl" "JSON" "Map"
+    "Math" "Number" "Object" "Promise" "Proxy" "RangeError" "ReferenceError"
+    "Reflect" "RegExp" "Set" "SharedArrayBuffer" "String" "Symbol"
+    "SyntaxError" "TypeError" "URIError" "Uint8Array" "Uint8ClampedArray"
+    "Uint16Array" "Uint32Array" "WeakMap" "WeakRef" "WeakSet"
+    ;; Browsers and Node.js
+    "console" "setTimeout" "clearTimeout" "setInterval" "clearInterval"
+    "queueMicrotask" "structuredClone" "fetch" "URL" "URLSearchParams"
+    "TextEncoder" "TextDecoder" "AbortController" "AbortSignal" "Event"
+    "EventTarget" "atob" "btoa" "crypto" "performance" "Blob" "FormData"
+    "Headers" "Request" "Response"))
+
 (define reserved-table (make-string-table %reserved-words))
 (define protected-table (make-string-table %protected-globals))
+(define standard-table (make-string-table %standard-globals))
 
 (define (js-reserved? s)
   (hash-ref reserved-table s #f))
 
 (define (js-protected-global? s)
   (hash-ref protected-table s #f))
+
+(define (js-standard-global? s)
+  (hash-ref standard-table s #f))
 
 (define (identifier-start-char? c)
   (or (char-alphabetic? c) (char=? c #\_) (char=? c #\$)))

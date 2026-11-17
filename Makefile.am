@@ -45,6 +45,7 @@ TESTS = \
 	tests/error-dotted-pair.gs \
 	tests/error-guile-module.gs \
 	tests/error-guile-module-replace.gs \
+	tests/error-guile-procedure.gs \
 	tests/error-import.gs \
 	tests/error-method.gs \
 	tests/error-name-clash.gs \
@@ -52,7 +53,9 @@ TESTS = \
 	tests/error-parameterize.gs \
 	tests/error-property.gs \
 	tests/error-setter.gs \
+	tests/error-undeclared.gs \
 	tests/functions.gs \
+	tests/globals.gs \
 	tests/guile-modules.gs \
 	tests/interop.gs \
 	tests/lists.gs \

@@ -185,8 +185,7 @@ compilation error that says which name and which module.
 * Names
 
 Scheme names are converted to camelCase JavaScript names, so the code reads
-naturally from both sides. Names that are not defined in the program are
-JavaScript globals (e.g. =document=, =setTimeout= or =parseFloat=).
+naturally from both sides.
 
 | GuileScript    | JavaScript        |
 |----------------+-------------------|
@@ -207,6 +206,19 @@ JavaScript globals (e.g. =document=, =setTimeout= or =parseFloat=).
 
 It is a compilation error if two different Scheme names end up with the same
 JavaScript name.
+
+* Globals
+
+Standard JavaScript globals (=Math=, =JSON=, =Promise=, =console=, =fetch=,
+=setTimeout=...) can be used directly. Other globals, like the browser's
+=document= or Node.js' =process=, have to be declared:
+
+#+BEGIN_SRC scheme
+(js-global document window)
+#+END_SRC
+
+Using a name that is not defined, imported or declared is a compilation
+error, so typos are found at compile time instead of at runtime.
 
 * Data and semantics
 
@@ -364,9 +376,8 @@ These procedures are compiled inline into JavaScript (see
 - Logging: =console-log console-debug console-info console-warn
   console-error=
 
-Using other procedures from Guile core (e.g. =display=) gives a warning, since
-they will be called as JavaScript globals. Using other procedures from modules
-imported with =use-modules= is an error (see [[*Guile modules][Guile modules]]).
+Using any other Guile procedure (e.g. =display=) is a compilation error (see
+also [[*Guile modules][Guile modules]]).
 
 * What's missing?
 

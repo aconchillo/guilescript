@@ -58,6 +58,7 @@
 ;; => 5
 
 ;; Errors are thrown as JavaScript Error objects.
+(js-global process)
 (js-invoke process 'on "uncaughtException"
            (lambda (e) (console-log "caught:" (js-ref e 'message))))
 

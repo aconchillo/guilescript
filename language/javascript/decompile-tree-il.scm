@@ -253,6 +253,20 @@
        (toplevel-ref? (call-proc x))
        (eq? (toplevel-ref-name (call-proc x)) 'js-import)))
 
+;; (js-global name ...) declares JavaScript globals.
+(define (js-global-form? x)
+  (and (call? x)
+       (toplevel-ref? (call-proc x))
+       (eq? (toplevel-ref-name (call-proc x)) 'js-global)))
+
+(define (global-form-names x)
+  (map (lambda (arg)
+         (unless (toplevel-ref? arg)
+           (note-location! (tree-il-src x))
+           (compile-error "js-global expects names, e.g. (js-global document window)"))
+         (toplevel-ref-name arg))
+       (call-args x)))
+
 ;; Calls that throw: (error msg irritant ...), (raise obj).
 (define (throw-call? x)
   (and (call? x)
@@ -363,7 +377,8 @@
          ((target) target)
          (_ #f))))
 
-(define %special-procedures '(apply error throw raise raise-exception js-import))
+(define %special-procedures
+  '(apply error throw raise raise-exception js-import js-global))
 
 ;;
 ;; Analysis
@@ -385,7 +400,10 @@
                          (+ 1 (hashq-ref (unit-defined unit) name 0))))))
         ((js-import-form? form)
          (for-each (cut hashq-set! (unit-imported unit) <> #t)
-                   (import-form-names form)))))
+                   (import-form-names form)))
+        ((js-global-form? form)
+         (for-each (cut hashq-set! (unit-imported unit) <> #t)
+                   (global-form-names form)))))
      (toplevel-forms x))
     (for-each
      (lambda (form)
@@ -410,6 +428,10 @@
     (tree-il-fold
      (lambda (y seed)
        (cond
+        ((and (not (eq? y x)) (or (js-import-form? y) (js-global-form? y)))
+         (note-location! (or (tree-il-src y) (first-user-location y)))
+         (compile-error "~a is only allowed at the top level"
+                        (toplevel-ref-name (call-proc y))))
         ((lexical-set? y)
          (hashq-set! (unit-lexical-assigned unit) (lexical-set-gensym y) #t))
         ((toplevel-set? y)
@@ -431,19 +453,21 @@
      (lambda (y seed) seed)
      #f x)))
 
-;; Names that are not defined in the program nor bound in Guile are
-;; JavaScript globals. Unsupported procedures from Guile core get a warning
-;; (they might also be JavaScript globals), but the ones from modules
-;; imported with use-modules are an error.
+;; Every name used by the program must be defined, imported (js-import),
+;; declared (js-global), a GuileScript built-in or a standard JavaScript
+;; global, so mistakes are found at compile time.
 (define (check-guile-binding! name src)
-  (unless (or (user-defined? name)
-              (js-protected-global? (symbol->string name)))
+  (unless (user-defined? name)
     (match (guile-binding name)
-      (#f #t)
-      (('(guile) _ var)
-       (when (and (variable-bound? var) (procedure? (variable-ref var)))
-         (compile-warning src "`~a' is a Guile procedure not supported by GuileScript, it will be called as a JavaScript global"
-                          name)))
+      (#f
+       (unless (js-standard-global? (toplevel-js-name name))
+         (note-location! src)
+         (compile-error "`~a' is not defined (if it's a JavaScript global, declare it with (js-global ~a))"
+                        name name)))
+      (('(guile) _ _)
+       (note-location! src)
+       (compile-error "`~a' is a Guile procedure not supported by GuileScript (if it's a JavaScript global, declare it with (js-global ~a))"
+                      name name))
       ((module _ _)
        (note-location! src)
        (compile-error "`~a' from ~a is not supported by GuileScript (only macros and GuileScript built-in procedures can be imported from Guile modules)"
@@ -697,6 +721,7 @@
   (cond
    ((toplevel-define? x) (compile-definition x acc))
    ((use-modules-form? x) #t)
+   ((js-global-form? x) #t)
    ((define-module-form? x)
     (compile-error "define-module is not supported yet, use use-modules to import Guile modules"))
    ((export-form-names x) #t)
@@ -1378,6 +1403,8 @@
       (compile-error "js-import is only allowed at the top level"))
      ((named-ref? proc 'process-use-modules)
       (compile-error "use-modules is only allowed at the top level"))
+     ((named-ref? proc 'js-global)
+      (compile-error "js-global is only allowed at the top level"))
      ((and (lexical-ref? proc)
            (not (hashq-ref (unit-gensym-names (current-unit)) (lexical-ref-gensym proc) #f)))
       (compile-error "internal error: call to an inlined loop outside of a tail position"))

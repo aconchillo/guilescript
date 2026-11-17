@@ -29,6 +29,8 @@
 ;;
 (define js-fibonacci
   '(begin
+     (js-global document alert)
+
      (define (fib n)
        (if (<= n 1)
            1
