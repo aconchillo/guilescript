@@ -562,7 +562,19 @@
     #:dup '(0)))
 
 (define-callback-method! 'map "map")
-(define-callback-method! 'for-each "forEach")
+
+(define-primitive! 'for-each 2 2
+  (lambda (args til fresh)
+    (match args
+      ((f l)
+       ;; forEach doesn't wait for the promises returned by async functions.
+       (match f
+         (('async . _)
+          (compile-warning (current-location)
+                           "the function given to for-each uses js-await, but for-each doesn't wait for it (use a loop, or map and Promise.all)"))
+         (_ #t))
+       (method l "forEach" (callback f (first til) 1 fresh)))))
+  #:dup '(0))
 (define-callback-method! 'filter "filter")
 (define-callback-method! 'any "some")
 (define-callback-method! 'every "every")
