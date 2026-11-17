@@ -34,11 +34,20 @@
 
 ;; The code is expanded in a fresh module (ENV), which is also given to the
 ;; JavaScript compiler so it knows where imported names come from.
+;;
+;; Guile's warnings while expanding are about Guile's semantics (e.g. case
+;; with strings, which works in GuileScript), so they are not shown.
+;; GuileScript reports its own problems.
+
+(define (without-guile-warnings thunk)
+  (parameterize ((current-warning-port (%make-void-port "w")))
+    (thunk)))
 
 (define (compile exp)
   (let ((env (default-environment 'guilescript)))
     (system:decompile
-     (system:compile exp #:from 'guilescript #:to 'tree-il #:env env)
+     (without-guile-warnings
+      (lambda () (system:compile exp #:from 'guilescript #:to 'tree-il #:env env)))
      #:from 'tree-il #:to 'javascript #:env env)))
 
 ;; Compile FILENAME into JavaScript. Returns the JavaScript code, the path of
@@ -64,8 +73,10 @@
           (call-with-input-file filename
             (lambda (p)
               (let* ((env (default-environment 'guilescript))
-                     (tree-il (system:read-and-compile p #:from 'guilescript #:to 'tree-il
-                                                       #:env env))
+                     (tree-il (without-guile-warnings
+                               (lambda ()
+                                 (system:read-and-compile p #:from 'guilescript #:to 'tree-il
+                                                          #:env env))))
                      (js (call-with-values
                              (lambda ()
                                (system:decompile tree-il #:from 'tree-il #:to 'javascript
