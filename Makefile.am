@@ -92,6 +92,7 @@ AM_TESTS_ENVIRONMENT = \
 
 EXTRA_DIST = \
 	$(TESTS) \
+	doc/reference.md \
 	tests/project/greetings.gs \
 	tests/project/shapes/circle.gs \
 	tests/project/util.gs \

@@ -47,4 +47,6 @@ map the compiled code back to the `.gs` files (in development and, with
   with macros) are also searched (`guilescript -L`), relative to the project
   root.
 
-See `examples/vite` in the GuileScript repository for a complete example.
+See `examples/vite` in the GuileScript repository for a complete example,
+and [GuileScript's README](https://github.com/aconchillo/guilescript#a-react-app-with-vite)
+to create a React app.

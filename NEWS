@@ -110,6 +110,9 @@
 
   - Test suite (make check, needs Node.js).
 
+  - New README, for people new to Scheme too (with a React app made with
+    Vite), and a reference in doc/reference.md.
+
 * Version 0.2.0 (Jan 30, 2022)
 
   - Add initial macro support.

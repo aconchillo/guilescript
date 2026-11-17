@@ -1,238 +1,137 @@
 # GuileScript
 
-## What is GuileScript?
-
 [![CI](https://github.com/aconchillo/guilescript/actions/workflows/guile3.0.yml/badge.svg)](https://github.com/aconchillo/guilescript/actions/workflows/guile3.0.yml)
 
-GuileScript compiles [Guile](https://www.gnu.org/software/guile/) to readable, modern JavaScript.
+GuileScript compiles Scheme code into JavaScript. Scheme is a small language
+from the Lisp family, and GuileScript uses the version of it implemented by
+[Guile](https://www.gnu.org/software/guile/), the GNU project's Scheme.
 
-You write Scheme (with all of Guile's macro system) and you get the kind of
-JavaScript you would write by hand: `const`, `function`, arrow functions,
-`while` loops and ES modules. There is no runtime library: GuileScript uses
-JavaScript data, so the generated code works with any JavaScript library,
-npm package or bundler.
+The JavaScript you get is plain and readable, like code you would write by
+hand. It runs in the browser and in Node.js, and it can use any JavaScript
+library. For example, this is a React component written in GuileScript:
 
 ```scheme
-(js-import "canvas-confetti" #:default confetti)
+(use-modules (guilescript html))
+(js-import "react" #:rename '((createElement . h)) use-state)
 
-(define-public (celebrate! times)
-  (let loop ((i 0))
-    (when (< i times)
-      (confetti #:particle-count 100 #:spread (* 10 (+ i 1)))
-      (loop (+ i 1)))))
+(define-public (<counter>)
+  (define-values (count set-count!) (use-state 0))
+  (html (button #:on-click ,(lambda () (set-count! (+ count 1)))
+                "Clicked " ,count " times")))
 ```
 
-```javascript
-import confetti from "canvas-confetti";
+and the JavaScript it compiles into:
 
-export function celebrate(times) {
-  let i = 0;
-  while (true) {
-    if (i < times) {
-      confetti({ particleCount: 100, spread: 10 * (i + 1) });
-      i = i + 1;
-      continue;
-    }
-    return;
-  }
+```javascript
+import { createElement as h, useState } from "react";
+
+export function Counter() {
+  const [count, setCount] = useState(0);
+  return h(
+    "button",
+    { onClick: () => setCount(count + 1) },
+    "Clicked ",
+    count,
+    " times"
+  );
 }
 ```
 
-If you need full Guile semantics in the browser (tail calls everywhere,
-continuations, the numeric tower...) have a look at [Guile Hoot](https://spritely.institute/hoot/) which compiles
-Guile to WebAssembly. GuileScript is the thin alternative: Scheme syntax and
-macros on top of plain JavaScript.
+There's no JSX: the HTML elements are written in Scheme too.
 
-## Why?
+## Why GuileScript?
 
-Because, why not? [Guile](https://www.gnu.org/software/guile/) is actually a lot of fun and I just got jealous that
-people could do these sort of [cool things with ClojureScript](https://twitter.com/zaneshelby/status/1477988369154121734?s=20) and I couldn't with
-Guile. But thanks to GuileScript it is now with [gas](https://github.com/aconchillo/gas).
+- **Readable output.** The generated code uses `const`, functions, arrow
+  functions and ES modules, so you can read it and debug it. Source maps
+  point errors back to your `.gs` files.
 
-## How does it work?
+- **No runtime library.** GuileScript uses JavaScript's own data (a Scheme
+  list is a JavaScript array, a string is a string), so the code works with
+  any npm package and bundler, and JavaScript code can call it.
 
-GuileScript leverages [Guile's Compiler Tower](https://www.gnu.org/software/guile/manual/html_node/Compiler-Tower.html). Guile expands all the macros
-and compiles the code into [Tree-IL](https://www.gnu.org/software/guile/manual/html_node/Tree_002dIL.html). GuileScript then compiles Tree-IL into a
-small JavaScript AST that is finally printed.
+- **Macros.** Scheme macros let you add new syntax to the language. The
+  `html` syntax above is a macro of about 40 lines, and you can write your
+  own.
 
-## How do I try it out?
+- **Mistakes caught early.** Using a name that doesn't exist, or a Guile
+  feature that can't work in JavaScript, is a compilation error instead of a
+  surprise at runtime.
 
-You need Guile 3.0. Clone the repository and run:
+- **The same language on the server and in the browser.** Code can be shared
+  between a Guile program and its web page (see the
+  [task manager](examples/task-manager) example).
 
-```console
-$ autoreconf -vif
-$ ./configure
-$ make
-$ make check    # needs Node.js
-$ sudo make install
-```
+If you need all of Guile in the browser (continuations, exact numbers...),
+have a look at [Guile Hoot](https://spritely.institute/hoot/), which compiles
+Guile to WebAssembly. GuileScript is the lightweight alternative: Scheme's
+syntax and macros on top of plain JavaScript.
 
-If you are on macOS you can actually install GuileScript through [Guile Homebrew](https://github.com/aconchillo/homebrew-guile):
+## Getting started
+
+### Install
+
+GuileScript needs [Guile 3.0](https://www.gnu.org/software/guile/). On macOS,
+you can install both with [Guile Homebrew](https://github.com/aconchillo/homebrew-guile):
 
 ```console
 $ brew install aconchillo/guile/guilescript
 ```
 
-Then compile one of the examples:
+Otherwise, install Guile 3.0 and its development files (e.g. `guile-3.0-dev`
+on Debian and Ubuntu), pkg-config, Autoconf and Automake with your system's
+package manager, and build GuileScript:
 
 ```console
-$ guilescript examples/basic/fibonacci.gs
-$ guilescript -o fibonacci.js examples/basic/fibonacci.gs
-$ node fibonacci.js
-89
+$ git clone https://github.com/aconchillo/guilescript.git
+$ cd guilescript
+$ autoreconf -vif
+$ ./configure
+$ make
+$ sudo make install
 ```
+
+### Your first program
+
+GuileScript files end in `.gs`. Write this into `hello.gs`:
 
 ```scheme
-(define (fib n)
-  (if (<= n 1)
-      1
-      (+ (fib (- n 2)) (fib (- n 1)))))
+(define (greet name)
+  (string-append "Hello, " name "!"))
 
-(console-log (fib 10))
+(console-log (greet "world"))
 ```
 
-```javascript
-function fib(n) {
-  return n <= 1 ? 1 : fib(n - 2) + fib(n - 1);
+`guilescript` prints the JavaScript code, or writes it to a file with `-o`:
+
+```console
+$ guilescript hello.gs
+function greet(name) {
+  return "Hello, " + name + "!";
 }
 
-console.log(fib(10));
+console.log(greet("world"));
+$ guilescript -o hello.js hello.gs
+$ node hello.js
+Hello, world!
 ```
 
-GuileScript can also be used from a Guile program, e.g. a web server:
-`compile-file` and `compile-modules` (from `(language guilescript compile)`)
-compile GuileScript files into JavaScript (see
-`examples/task-manager/server.scm`).
+### A React app with Vite
 
-### Examples
-
-- `examples/basic`: small programs, and a Guile web server with GuileScript
-  code (`fibonacci-server.scm`).
-
-- `examples/vite`: a minimal Vite project.
-
-- `examples/task-manager`: a complete application. A Guile web server with a
-  JSON API (tasks stored in SQLite), and the web page in GuileScript in two
-  versions: using the DOM directly, and with React and Vite. The task
-  validation is shared by the server and the web pages.
-
-### Source maps
-
-With `--source-map`, GuileScript also generates source maps (`fibonacci.js.map`
-next to the compiled file, or inline when writing to stdout), so browsers'
-developer tools show the `.gs` files and stack traces point to them. With
-Node.js, use `node --enable-source-maps`:
-
-```scheme
-(define (fail-here)
-  (error "boom"))
-
-(fail-here)
-```
+[Vite](https://vite.dev/) is a popular tool to develop and build web
+applications. Its GuileScript plugin, `vite-plugin-guilescript`, compiles
+`.gs` files when they are imported. To create a React app from scratch:
 
 ```console
-$ guilescript -o app.js --source-map app.gs
-$ node --enable-source-maps app.js
-/path/to/app.gs:2
-  (error "boom"))
-  ^
-
-Error: boom
-    at failHere (/path/to/app.gs:2:3)
-    at Object.<anonymous> (/path/to/app.gs:4:1)
+$ mkdir hello-react
+$ cd hello-react
+$ npm init -y
+$ npm install react react-dom
+$ npm install --save-dev vite vite-plugin-guilescript
 ```
 
-Statements are mapped to the line (and the approximate column) of the
-GuileScript code they come from.
-
-## Using npm packages and ES modules
-
-`js-import` imports JavaScript modules and `define-public` (or `export`)
-exports definitions. A file that uses them is an ES module that can be used
-with any bundler (esbuild, Vite, webpack...).
-
-| GuileScript                                              | JavaScript                                      |
-|----------------------------------------------------------|-------------------------------------------------|
-| `(js-import "react" use-state)`                          | `import { useState } from "react";`             |
-| `(js-import "lodash" #:default _)`                       | `import _ from "lodash";`                       |
-| `(js-import "node:path" #:as path)`                      | `import * as path from "node:path";`            |
-| `(js-import "./style.css")`                              | `import "./style.css";`                         |
-| `(js-import "node:path" #:rename '((join . path-join)))` | `import { join as pathJoin } from "node:path";` |
-| `(define-public (f x) ...)`                              | `export function f(x) { ... }`                  |
-| `(export f g)`                                           | adds `export` to the definitions of `f` and `g` |
-
-## What works and what never will
-
-Guile is two things: a language (its syntax and macros) and a runtime (its
-data types, ports, continuations, threads...). GuileScript compiles the
-language and uses JavaScript as the runtime. So, for any feature:
-
-- If it only exists at compile time, it works: macros, `syntax-rules`,
-  `syntax-case`, quasiquote...
-
-- If JavaScript has an equivalent, it works or it will: numbers, strings,
-  lists and vectors (arrays), hash tables (`Map`), closures, loops, errors,
-  records (classes), multiple values (arrays), modules (ES modules)...
-
-- If it only exists in Guile's runtime, it will never work: ports,
-  first-class continuations (`call/cc`), `dynamic-wind`, threads, the numeric
-  tower (exact rationals, automatic big integers), mutable pairs
-  (`set-cdr!`), circular lists, `eval` at runtime... Use the JavaScript
-  equivalents instead (`console`, `fetch`, streams, promises...).
-
-If you need Guile's runtime in the browser, use [Guile Hoot](https://spritely.institute/hoot/).
-
-## GuileScript modules
-
-A GuileScript program can be split into modules. The module `(app util)` is
-the file `app/util.gs`:
-
-```scheme
-(define-module (app util)
-  #:export (shout))
-
-(define (shout s)
-  (string-append (string-upcase s) "!"))
-```
-
-```scheme
-(define-module (app main)
-  #:use-module (app util))
-
-(console-log (shout "hello"))
-```
-
-Each module is compiled into an ES module, and importing a GuileScript module
-imports the names it exports:
-
-```javascript
-import { shout } from "./util.js";
-console.log(shout("hello"));
-```
-
-Compile a file and all the GuileScript modules it imports with `-d`:
-
-```console
-$ guilescript -d dist src/app/main.gs
-```
-
-This writes `dist/app/main.js` and `dist/app/util.js`. GuileScript modules are
-searched relative to the module being compiled (`src/` here) and in the
-directories given with `-L`. `#:select` and `#:prefix` work as usual.
-
-GuileScript modules export functions and values. Macros can be shared through
-Guile modules. A GuileScript module that only uses what works the same way
-in Guile can also be loaded by Guile, e.g. to share code between a Guile
-server and a web page (see `examples/task-manager`).
-
-## Using with Vite
-
-`vite-plugin-guilescript` (in this repository) lets [Vite](https://vite.dev/)
-compile `.gs` files, so they can be used like any other module, both with the
-development server and in production builds:
+Then add these three files. `vite.config.js` enables the plugin:
 
 ```js
-// vite.config.js
 import { defineConfig } from "vite";
 import guilescript from "vite-plugin-guilescript";
 
@@ -241,387 +140,273 @@ export default defineConfig({
 });
 ```
 
+`index.html` loads `src/main.gs`:
+
 ```html
-<script type="module" src="/src/main.gs"></script>
+<!doctype html>
+<html>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.gs"></script>
+  </body>
+</html>
 ```
 
-Compilation errors are shown with their location in Vite's error overlay, and
-source maps map the code back to the `.gs` files (enable `build.sourcemap` to
-also have them in production builds). Install it with:
-
-```console
-$ npm install --save-dev vite-plugin-guilescript
-```
-
-It runs the `guilescript` command, so GuileScript must be installed (or see
-[Hacking](#hacking) to use it without installing it).
-
-See `examples/vite` for a complete example. (The plugin compiles each file
-with `guilescript --source-imports`, which imports GuileScript modules by the
-path of their `.gs` file, e.g. `./util.gs`, so they are compiled by the plugin
-too.)
-
-## Guile modules
-
-Modules that are not GuileScript modules are Guile modules. For every name
-imported from a Guile module:
-
-- Macros (`match`, `cut`, `receive`...) can always be used, they are expanded
-  at compile time. This also means macros can be shared between Guile code
-  and GuileScript code.
-
-- Procedures that GuileScript compiles inline (see [Built-in procedures](#built-in-procedures)) can be
-  used, also when they are renamed with `#:select` or `#:prefix`.
-
-- Any other procedure is a compilation error, since it would only exist in
-  Guile.
-
-```scheme
-(use-modules (ice-9 match)
-             ((srfi srfi-1) #:prefix s1:))
-
-(define (area shape)
-  (match shape
-    (('circle r) (* 3 r r))
-    (('rect w h) (* w h))))
-
-(s1:fold + 0 (map area shapes))
-```
-
-Some common modules:
-
-| Module                                             | What can be used                              |
-|----------------------------------------------------|-----------------------------------------------|
-| `(ice-9 match)`, `(srfi srfi-26)`, `(srfi srfi-2)` | everything (they are macros)                  |
-| `(srfi srfi-1)`, `(srfi srfi-13)`                  | the built-in procedures (`fold`, `iota`, ...) |
-| `(srfi srfi-9)`                                    | `define-record-type` (GuileScript's own)      |
-| `(ice-9 receive)`, `(srfi srfi-11)`                | everything (multiple values are arrays)       |
-| `(ice-9 rdelim)`, `(ice-9 textual-ports)`          | never (ports)                                 |
-
-There's no need to check this by hand: anything that can't be used is a
-compilation error that says which name and which module.
-
-## HTML elements
-
-`(guilescript html)` (a Guile module shipped with GuileScript) has the `html`
-macro, to write HTML elements with an SXML-like syntax instead of JSX:
+And `src/main.gs` is the counter from above, shown in the page:
 
 ```scheme
 (use-modules (guilescript html))
+(js-import "react" #:rename '((createElement . h)) use-state)
+(js-import "react-dom/client" create-root)
+(js-global document)
+
+(define (<counter>)
+  (define-values (count set-count!) (use-state 0))
+  (html (button #:on-click ,(lambda () (set-count! (+ count 1)))
+                "Clicked " ,count " times")))
+
+(.render (create-root (.get-element-by-id document "root"))
+         (html (<counter>)))
+```
+
+Run `npx vite` and open the address it prints (http://localhost:5173). When
+you change `src/main.gs`, the page reloads, and compilation errors are shown
+in the page with the line they come from. `npx vite build` builds the app
+into `dist/`.
+
+## Scheme for JavaScript developers
+
+Scheme code is made of lists in parentheses. The first element is the
+function and the rest are its arguments, so `f(a, b)` is `(f a b)`. There
+are no operators: `+` and `<` are functions too, so `1 + 2 * 3` is
+`(+ 1 (* 2 3))`.
+
+| JavaScript                                  | GuileScript                         |
+|---------------------------------------------|-------------------------------------|
+| `f(a, b)`                                   | `(f a b)`                           |
+| `1 + 2 * 3`                                 | `(+ 1 (* 2 3))`                     |
+| `const x = 42;`                             | `(define x 42)`                     |
+| `function add(a, b) { return a + b; }`      | `(define (add a b) (+ a b))`        |
+| `(x) => x * 2`                              | `(lambda (x) (* x 2))`              |
+| `x > 0 ? "yes" : "no"`                      | `(if (> x 0) "yes" "no")`           |
+| `if (a) {...} else if (b) {...} else {...}` | `(cond (a ...) (b ...) (else ...))` |
+| `const a = 1; const b = 2; ...`             | `(let ((a 1) (b 2)) ...)`           |
+| `true`, `false`, `null`                     | `#t`, `#f`, `#nil`                  |
+| `[1, 2, 3]`                                 | `(list 1 2 3)`                      |
+| `{ name: "Ann", age: 30 }`                  | `(js-obj #:name "Ann" #:age 30)`    |
+| `user.name`                                 | `(.-name user)`                     |
+| `user.name = "Bob"`                         | `(set! (.-name user) "Bob")`        |
+| `s.toUpperCase()`                           | `(.to-upper-case s)`                |
+| `items.map((x) => x * 2)`                   | `(map (lambda (x) (* x 2)) items)`  |
+| `new Date()`                                | `(js-new Date)`                     |
+| `await fetch(url)`                          | `(js-await (fetch url))`            |
+| `try { ... } catch (e) { ... }`             | `(guard (e (#t ...)) ...)`          |
+| `import { useState } from "react";`         | `(js-import "react" use-state)`     |
+| `export function add(a, b) { ... }`         | `(define-public (add a b) ...)`     |
+| `console.log("hi")`                         | `(console-log "hi")`                |
+
+A few more things that will help you read Scheme code:
+
+- Names can have dashes and other characters, and GuileScript converts them
+  to camelCase: `user-name` is `userName`. By convention, the names of
+  functions that return true or false end in `?`, and those that change
+  something end in `!`: `valid?` is `isValid` and `set-name!` is `setName`.
+
+- `#:name` is a keyword. In a call, keywords are named arguments, which are
+  passed as an object: `(f 1 #:color "red")` is `f(1, { color: "red" })`.
+
+- A function returns the value of its last expression, there's no `return`.
+
+- Comments start with `;`.
+
+- Only `#f`, `#nil` and `undefined` are false. Unlike in JavaScript, `0` and
+  `""` are true.
+
+To learn more about Scheme, start with [Guile's introduction to
+Scheme](https://www.gnu.org/software/guile/manual/html_node/Hello-Scheme_0021.html).
+
+## Writing React components
+
+This is a to-do list (in `src/todos.gs`, if you want to try it in the app
+above):
+
+```scheme
+(define-module (todos)
+  #:use-module (guilescript html)
+  #:export (<todo-list>))
+
+(js-import "react" #:rename '((createElement . h)) use-state)
+
+(define (<todo-list>)
+  (define-values (todos set-todos!) (use-state '()))
+  (define-values (text set-text!) (use-state ""))
+
+  (define (add! event)
+    (.prevent-default event)
+    (unless (string-null? text)
+      (set-todos! (append todos (list text)))
+      (set-text! "")))
+
+  (html
+   (div
+    (form #:on-submit add!
+          (input #:value text
+                 #:placeholder "What needs to be done?"
+                 #:on-change ,(lambda (event) (set-text! (.-value (.-target event)))))
+          (button "Add"))
+    ,(if (null? todos)
+         (html (p "Nothing to do!"))
+         (html (ul ,(map (lambda (todo) (html (li #:key todo todo)))
+                         todos)))))))
+```
+
+To use it, `src/main.gs` imports the module and shows `(<todo-list>)`:
+
+```scheme
+(use-modules (guilescript html) (todos))
 (js-import "react" #:rename '((createElement . h)))
+(js-import "react-dom/client" create-root)
+(js-global document)
 
-(define (<task-item> props)
-  (let ((task (.-task props)))
-    (html (li #:class-name ,(if (.-done task) "task done" "task")
-              (input #:type "checkbox" #:checked ,(.-done task))
-              (span #:class-name "title" ,(.-title task))))))
-
-(define (<task-list> props)
-  (html (ul ,(map (lambda (task) (html (<task-item> #:key ,(.-id task) #:task task)))
-                  (.-tasks props)))))
+(.render (create-root (.get-element-by-id document "root"))
+         (html (<todo-list>)))
 ```
 
-`(tag #:property value ... child ...)` is an element: `tag` is an HTML tag,
-or a component if it's like `<task-item>`. Property names are camelCase
-(`#:class-name` is `className`). Values and children are strings, numbers,
-variables, elements or `,expression` (any expression, e.g. a list of
-elements). The code above compiles into:
+How it works:
 
-```javascript
-function TaskItem(props) {
-  const task = props.task;
-  return h(
-    "li",
-    { className: task.done ? "task done" : "task" },
-    h("input", { type: "checkbox", checked: task.done }),
-    h("span", { className: "title" }, task.title)
-  );
-}
-```
+- `(html ...)` is an element: `(tag #:property value ... child ...)`.
+  Properties are keywords, converted to camelCase (`#:on-change` is
+  `onChange`, `#:class-name` is `className`). Children are other elements,
+  strings, numbers or variables.
 
-`html` calls `h`, the [hyperscript](https://github.com/hyperhype/hyperscript)
-convention `(h type properties child ...)`, so it works with any library with
-such a function: React (`createElement`, imported as `h` above), Preact
-(`(js-import "preact" h)`), or your own (see `examples/task-manager`, which
-has both a React version and a version that creates DOM elements).
+- A comma inserts any Scheme expression: a value (`,count`), a function
+  (`,(lambda (event) ...)`), a list of elements (`,(map ...)`) or an
+  element chosen with `if`.
 
-## Names
+- Components are functions named like `<todo-list>` (`TodoList` in
+  JavaScript), used like tags: `(<todo-list>)`. They receive the
+  properties as an object: `(.-title props)`.
 
-Scheme names are converted to camelCase JavaScript names, so the code reads
-naturally from both sides.
+- Hooks are imported from React like any other function. `define-values`
+  takes the two values that `use-state` returns, like `const [todos,
+  setTodos] = useState([])`.
 
-| GuileScript      | JavaScript     |
-|------------------|----------------|
-| `log-counter`    | `logCounter`   |
-| `even?`          | `isEven`       |
-| `has-children?`  | `hasChildren`  |
-| `set-name!`      | `setName`      |
-| `list->vector`   | `listToVector` |
-| `*debug*`        | `debug`        |
-| `new`            | `new_`         |
-| `<http-request>` | `HttpRequest`  |
+- `(guilescript html)` is a Guile module that comes with GuileScript. The
+  `html` macro calls `h(type, properties, ...children)`, which is why React's
+  `createElement` is imported as `h`. It works the same with Preact or with
+  your own `h` function (see the [task manager](examples/task-manager), which
+  has a React version and one that creates DOM elements directly).
 
-It is a compilation error if two different Scheme names end up with the same
-JavaScript name.
+## What works and what doesn't
 
-## Globals
+GuileScript compiles the Scheme language (its syntax and Guile's macros) and
+uses JavaScript for everything else (the data, the libraries, the event
+loop). So, in short: if JavaScript has it, it works.
 
-Standard JavaScript globals (`Math`, `JSON`, `Promise`, `console`, `fetch`,
-`setTimeout`...) can be used directly. Other globals, like the browser's
-`document` or Node.js' `process`, have to be declared:
+**Works:**
+
+- Functions (with optional, rest and keyword arguments), closures, `let`,
+  `cond`, `case`, `when`, `unless`, loops (`do` and named `let`, compiled into
+  `while` loops), quasiquote, `define-values`.
+- All macros (`define-syntax`, `syntax-rules`, `syntax-case`), including
+  macros from Guile modules like `match`.
+- Numbers, strings, characters, symbols, lists and vectors (arrays), hash
+  tables (`Map`), records (`define-record-type`, which defines a class),
+  multiple values and errors (`error`, `raise`, `guard`).
+- More than 150 built-in procedures (lists, strings, numbers...), compiled
+  inline.
+- JavaScript: npm packages, ES modules, methods, properties, `new`,
+  `async`/`await` and globals.
+- Modules: each GuileScript module is an ES module.
+
+**Will never work**, because it needs Guile's runtime: continuations
+(`call/cc`), `dynamic-wind`, ports (`display`, `read`...), threads, exact
+fractions and big integers, changing pairs (`set-car!`), `eval`. Use the
+JavaScript equivalents (`console-log`, `fetch`, promises...).
+
+**Not yet:** `format`, `this` and defining JavaScript classes, `finally`, and
+parameters.
+
+You don't need to remember this: anything that can't be compiled is a
+compilation error that says why. Since the data is JavaScript's, a few
+things behave differently than in Guile (lists are arrays, symbols are
+strings...). They are listed in the
+[reference](doc/reference.md#data-and-semantics).
+
+## Building on GuileScript
+
+**Write your own macros.** Macros run when the code is compiled, so they cost
+nothing at runtime. Put them in a Guile module, e.g. `macros/my/macros.scm`:
 
 ```scheme
-(js-global document window)
+(define-module (my macros)
+  #:export (->))
+
+;; (-> x (f a) g) is (g (f x a)): each result is the first argument of the
+;; next call.
+(define-syntax ->
+  (syntax-rules ()
+    ((_ x) x)
+    ((_ x (f args ...) rest ...) (-> (f x args ...) rest ...))
+    ((_ x f rest ...) (-> (f x) rest ...))))
 ```
 
-Using a name that is not defined, imported or declared is a compilation
-error, so typos are found at compile time instead of at runtime.
-
-## Data and semantics
-
-GuileScript uses JavaScript data types, so values are passed to and from
-JavaScript as they are.
-
-| GuileScript                        | JavaScript                      |
-|------------------------------------|---------------------------------|
-| `#t`, `#f`                         | `true`, `false`                 |
-| `#nil`                             | `null`                          |
-| `42`, `0.5`, `1/2`                 | `42`, `0.5`, `0.5`              |
-| `"guile"`, `#\g`                   | `"guile"`, `"g"`                |
-| `'guile`, `#:guile`                | `"guile"`                       |
-| `'(1 2 3)`, `(list 1 2 x)`         | `[1, 2, 3]`, `[1, 2, x]`        |
-| `#(1 2 3)`, `(vector 1 2 x)`       | `[1, 2, 3]`, `[1, 2, x]`        |
-| `` `(1 ,x ,@xs) ``                 | `[1, x, ...xs]`                 |
-| `(js-obj #:name "Ann" #:age 30)`   | `{ name: "Ann", age: 30 }`      |
-| `(make-hash-table)`                | `new Map()`                     |
-| `(define-record-type <point> ...)` | `class Point { ... }`           |
-| `(values a b)`, `(values x)`       | `[a, b]`, `x`                   |
-| `(receive (a b) expr body ...)`    | `const [a, b] = expr; body ...` |
-
-A few things to keep in mind:
-
-- Like in Scheme, only `#f`, `#nil` and `undefined` are false: `0` and `""`
-  are true (use `null?`, `string-null?` or `zero?` to check for them).
-  `undefined` is false so that "not found" (`find`, `hash-ref`, a missing
-  property) works like `#f`. When the compiler can't tell that a test is a
-  boolean, it checks `x != null && x !== false`. Comparisons, predicates
-  (procedures and variables whose names end in `?`) and JavaScript methods
-  like `isArray` or `includes` are booleans.
-
-- Lists and vectors are both arrays, so `cons` and `cdr` copy the array.
-
-- Symbols are strings, so `eq?` on two symbols compares strings (and
-  `string?` is true for symbols).
-
-- `member`, `memq` and `memv` return `#t` instead of the rest of the list,
-  and `any` and `every` return `#t` instead of the predicate's value. Both
-  work the same in conditions.
-
-- Like in Scheme, `equal?` compares lists and vectors element by element
-  (and so do `member`, `delete` and `delete-duplicates`), while `eq?` and
-  `eqv?` are `===`. A small `isEqual` function is added to the modules that
-  need it. Hash tables are `Map`s, which compare keys with `===`, so lists
-  used as keys are compared by identity.
-
-- Multiple values are arrays (a single value is just the value), so
-  `receive`, `let-values`, `define-values` and `call-with-values` destructure
-  arrays.
-
-- Like in Guile, vector literals are constants: `#(1 2 x)` contains the
-  symbol `x`. Use `(vector 1 2 x)` or `` `#(1 2 ,x) `` instead.
-
-- JavaScript has no pairs, so quoted data is always made of arrays, and
-  dotted pairs (e.g. a quoted association list) are a compilation error.
-  Use a list of lists to have something to iterate, or `js-obj` for an
-  object:
-
-  ```scheme
-  (define filters '(("all" "All") ("done" "Done")))   ; [["all", "All"], ...]
-  (map car filters)                                    ; ["all", "done"]
-
-  (define labels (js-obj "all" "All" "done" "Done"))  ; { all: "All", ... }
-  (assoc-ref labels "all")                             ; labels.all
-  ```
-
-  `assoc-ref` (and `assq-ref`, `assv-ref`) reads the properties of an
-  object, so code that reads objects with it can be shared with Guile code,
-  where they would be association lists.
-
-## Functions and control flow
-
-| GuileScript                        | JavaScript                                     |
-|------------------------------------|------------------------------------------------|
-| `(define a 23)`                    | `const a = 23;`                                |
-| `(define (f x y) ...)`             | `function f(x, y) { ... }`                     |
-| `(lambda (x) (* x 2))`             | `(x) => x * 2`                                 |
-| `(define (f a . rest) ...)`        | `function f(a, ...rest) { ... }`               |
-| `(define* (f a #:optional (b 1)))` | `function f(a, b = 1) { ... }`                 |
-| `(define* (f #:key (a 1) b))`      | `function f({ a = 1, b } = {}) { ... }`        |
-| `(f 1 #:color "red" #:size 2)`     | `f(1, { color: "red", size: 2 })`              |
-| `(let ((x 1)) ...)`                | `const x = 1; ...`                             |
-| `(if a b c)`                       | `a ? b : c`, or an `if` statement              |
-| `(and a b)`, `(or a b)`            | `a ? b : false`, `a \|\| b`                    |
-| `(error "Bad value:" x)`           | `throw new Error(["Bad value:", x].join(" "))` |
-| `(raise obj)`                      | `throw obj`                                    |
-| `(guard (e clause ...) body ...)`  | `try { body } catch (e) { clause ... }`        |
-
-Optional and keyword arguments without a default value are `undefined` when
-they are not given (in Guile they are `#f`). Both are false in conditions.
-
-`guard` is the R7RS one: its clauses are `cond` clauses and, if none of them
-matches, the exception is raised again.
+and use them from GuileScript:
 
 ```scheme
-(define (parse-json s)
-  (guard (e ((error-object? e) (console-error (error-object-message e)) #f))
-    (.parse JSON s)))
-```
+(use-modules (my macros))
 
-`error-object-message` is the error's `message`, which includes the
-irritants (`"Bad value: 42"`).
-
-`cond`, `case`, `when`, `unless`, `let*`, `letrec`, internal definitions,
-`case-lambda`, `apply`, quasiquote and all macros (`define-syntax`,
-`syntax-rules`, `syntax-case`) work as expected. `case` compares with `===`,
-so strings can be used as keys too.
-
-Named `let` loops, `do` loops and functions that call themselves in tail
-position are compiled into `while` loops, so they don't grow the stack. Other
-tail calls (e.g. mutually recursive functions) are regular JavaScript calls,
-so very deep recursion can run out of stack.
-
-## Records
-
-`define-record-type` (R7RS, SRFI-9) defines a JavaScript class, and calls to
-the record procedures are compiled into JavaScript expressions:
-
-```scheme
-(define-record-type <point>
-  (make-point x y)
-  point?
-  (x point-x set-point-x!)
-  (y point-y))
-
-(define p (make-point 1 2))
-(set-point-x! p (+ (point-x p) 1))
+(define (shout s)
+  (-> s string-trim-both string-upcase (string-append "!")))
 ```
 
 ```javascript
-class Point {
-  constructor(x, y) {
-    this.x = x;
-    this.y = y;
-  }
-}
-
-const p = new Point(1, 2);
-p.x = p.x + 1;
-```
-
-The record type (`<point>`) is the class (`Point`). The record procedures are
-only defined as functions if they are exported or used as values (e.g.
-`(map point-x points)`).
-
-GuileScript's `define-record-type`, `guard` and `define-values` are always
-used, even if a module providing Guile's versions (e.g. `(srfi srfi-9)`) is
-imported.
-
-## JavaScript interoperability
-
-| GuileScript                             | JavaScript                    |
-|-----------------------------------------|-------------------------------|
-| `(.method obj arg1 ... argN)`           | `obj.method(arg1, ..., argN)` |
-| `(.to-fixed x 2)`                       | `x.toFixed(2)`                |
-| `(.-prop obj)`                          | `obj.prop`                    |
-| `(set! (.-prop obj) value)`             | `obj.prop = value`            |
-| `(js-ref obj 'prop)`                    | `obj.prop`                    |
-| `(js-ref obj 'a 'b)`                    | `obj.a.b`                     |
-| `(js-ref obj key)`                      | `obj[key]`                    |
-| `(js-set! obj 'prop value)`             | `obj.prop = value`            |
-| `(set! (js-ref obj 'a 'b) value)`       | `obj.a.b = value`             |
-| `(js-invoke obj 'method arg1 ... argN)` | `obj.method(arg1, ..., argN)` |
-| `(js-new Date arg1 ... argN)`           | `new Date(arg1, ..., argN)`   |
-| `(js-obj #:name "Ann" 'age 30)`         | `{ name: "Ann", age: 30 }`    |
-| `(js-typeof x)`                         | `typeof x`                    |
-| `(js-instanceof x Date)`                | `x instanceof Date`           |
-| `(js-delete! obj 'prop)`                | `delete obj.prop`             |
-| `(js-await promise)`                    | `await promise`               |
-
-A function that uses `js-await` is compiled into an `async` function. At the
-top level of an ES module, `js-await` is a top-level `await`.
-
-```scheme
-(define (fetch-json url)
-  (.json (js-await (fetch url))))
-```
-
-```javascript
-async function fetchJson(url) {
-  return (await fetch(url)).json();
+function shout(s) {
+  return s.trim().toUpperCase() + "!";
 }
 ```
 
-Methods and properties can also be used as values: `(map .toUpperCase
-strings)` compiles to `strings.map((x) => x.toUpperCase())` and `(map .-length
-strings)` to `strings.map((x) => x.length)`.
+The directory with the module is given with `-L macros` (or the plugin's
+`loadPath` option in Vite). This is how `(guilescript html)` works too.
 
-Method and property names (`.to-fixed`, `.-max-value`) and keywords
-(`#:first-name`) are converted to camelCase like any other name (`toFixed`,
-`maxValue`, `firstName`). Symbols and strings given to `js-ref`, `js-invoke`
-and `js-obj` are used as they are.
+**Write libraries.** GuileScript modules are compiled into ES modules, so a
+GuileScript library can be published on npm and used from JavaScript or
+TypeScript, and the other way around.
 
-## Built-in procedures
+**Use it from Guile.** `(language guilescript compile)` compiles GuileScript
+from a Guile program, e.g. a web server that serves its own web page (see the
+[task manager](examples/task-manager)).
 
-These procedures are compiled inline into JavaScript (see
-`language/javascript/primitives.scm`):
+**Integrate it with other tools.** The Vite plugin is about 150 lines of
+JavaScript that run the `guilescript` command. Plugins for other tools can do
+the same.
 
-- Numbers: `+ - * / = < > <= >= 1+ 1- abs ceiling floor round truncate max
-  min sqrt exp log sin cos tan asin acos atan expt quotient remainder modulo
-  zero? positive? negative? odd? even? number? integer? nan? exact inexact
-  exact->inexact inexact->exact number->string string->number floor/
-  floor-quotient floor-remainder truncate/ truncate-quotient
-  truncate-remainder`
+Everything is described in the [reference](doc/reference.md).
 
-- Booleans and types: `not eq? eqv? equal? boolean? string? symbol? keyword?
-  char? procedure? list? vector? null? pair?`
+## Examples
 
-- Strings and characters: `string-length string-ref substring string-copy
-  string-append string string-upcase string-downcase string-null?
-  string-prefix? string-suffix? string-split string-join string-trim
-  string-trim-right string-trim-both string->list list->string string=?
-  string<? string>? string<=? string>=? char=? char<? char>? char<=? char>=?
-  char->integer integer->char char-upcase char-downcase string->symbol
-  symbol->string keyword->string`
+- [`examples/basic`](examples/basic): small programs, and a Guile web server
+  with GuileScript code (`fibonacci-server.scm`).
 
-- Lists and vectors: `list cons car cdr caar cadr cdar cddr caddr cdddr
-  cadddr first second third fourth fifth last length list-ref list-tail
-  list-head take drop append reverse list-copy map for-each filter remove
-  fold fold-right reduce any every find count delete delete-duplicates
-  member memq memv iota make-list sort vector make-vector vector-length
-  vector-ref vector-set! vector-fill! vector-copy vector->list list->vector`
+- [`examples/vite`](examples/vite): a minimal Vite project.
 
-- Objects and hash tables: `assoc-ref assq-ref assv-ref` (object
-  properties), `make-hash-table hash-ref hash-set! hash-remove! hash-clear! hash-for-each
-  hash-map->list`
+- [`examples/task-manager`](examples/task-manager): a complete application. A
+  Guile web server with a JSON API (the tasks are stored in SQLite), and its
+  web page in GuileScript, in two versions: using the DOM directly, and with
+  React and Vite. The validation of the tasks is shared by the server and the
+  web pages.
 
-- Multiple values: `values call-with-values`
+## How it works
 
-- Errors: `error-object? error-object-message`
+GuileScript is built on [Guile's compiler tower](https://www.gnu.org/software/guile/manual/html_node/Compiler-Tower.html). Guile reads the code,
+expands the macros and compiles it into
+[Tree-IL](https://www.gnu.org/software/guile/manual/html_node/Tree_002dIL.html), Guile's
+intermediate language. GuileScript then compiles Tree-IL into a small
+JavaScript syntax tree, which is printed as JavaScript.
 
-- Logging: `console-log console-debug console-info console-warn
-  console-error`
-
-Using any other Guile procedure (e.g. `display`) is a compilation error (see
-also [Guile modules](#guile-modules)).
-
-## What's missing?
-
-- `this` and classes (and `finally`).
-
-- `format`.
-
-- Continuations, `dynamic-wind` and parameters.
-
+I started GuileScript because Guile is a lot of fun, and I wanted to do the
+[cool things people do with ClojureScript](https://twitter.com/zaneshelby/status/1477988369154121734?s=20)
+with Guile.
 
 ## Hacking
 
@@ -633,9 +418,9 @@ paths and adds the `guilescript` command to `PATH`:
 $ ./env guilescript examples/basic/fibonacci.gs
 ```
 
-Run the test suite with `make check` (it needs Node.js). Each test in `tests/`
-is a GuileScript program with its expected output in `;; => ...` comments
-(or an expected compilation error in `;; error: ...` comments). Tests are
+Run the tests with `make check` (it needs Node.js). Each test in `tests/` is
+a GuileScript program with its expected output in `;; => ...` comments (or
+an expected compilation error in `;; error: ...` comments). Tests are
 compiled with `-d` and `--source-map`, so they can import GuileScript modules
 (e.g. the ones in `tests/project/`), and they are run with source maps
 enabled.
