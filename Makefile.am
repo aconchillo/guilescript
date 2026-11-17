@@ -65,6 +65,7 @@ TESTS = \
 	tests/loops.gs \
 	tests/modules.gs \
 	tests/names.gs \
+	tests/prelude.gs \
 	tests/strings.gs \
 	$(EXAMPLES)
 

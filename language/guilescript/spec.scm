@@ -63,7 +63,11 @@
                     ;; unsupported options.
                     (module-set! m 'format simple-format)
 
-                    ;; GuileScript syntax (e.g. guard).
-                    (module-use! m (resolve-interface '(language guilescript prelude)))
+                    ;; GuileScript syntax (e.g. guard). It is defined in the
+                    ;; module itself (not imported) so it takes precedence
+                    ;; over Guile's equivalents (e.g. define-record-type from
+                    ;; (srfi srfi-9)), which can't be compiled.
+                    (module-for-each (lambda (name var) (module-add! m name var))
+                                     (resolve-interface '(language guilescript prelude)))
 
                     m)))
