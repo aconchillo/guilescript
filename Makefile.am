@@ -96,6 +96,13 @@ EXTRA_DIST = \
 	vite-plugin-guilescript/index.js \
 	vite-plugin-guilescript/package.json \
 	examples/fibonacci-server.scm \
+	examples/task-manager/README.md \
+	examples/task-manager/server.scm \
+	examples/task-manager/shared/tasks/api.gs \
+	examples/task-manager/shared/tasks/validation.gs \
+	examples/task-manager/style.css \
+	examples/task-manager/vanilla/app.gs \
+	examples/task-manager/vanilla/dom.gs \
 	examples/vite/README.md \
 	examples/vite/index.html \
 	examples/vite/package.json \

@@ -19,3 +19,5 @@ guilescript-*
 
 node_modules/
 examples/vite/dist/
+
+examples/task-manager/tasks.db
