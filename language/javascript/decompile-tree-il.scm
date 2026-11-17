@@ -1948,10 +1948,21 @@
   (when (< (length args) 2)
     (compile-error "apply needs a procedure and a list of arguments"))
   (let ((prim (primitive-for (car args))))
-    (if prim
-        (call-function (primitive-value prim) (spread-args (compile-exprs (cdr args) acc)))
-        (match (compile-exprs args acc)
-          ((f . exprs) (call-function f (spread-args exprs)))))))
+    (cond
+     (prim
+      (call-function (primitive-value prim) (spread-args (compile-exprs (cdr args) acc))))
+     ;; (apply .method obj arg ... list) => obj.method(arg, ..., ...list)
+     ((method-ref (car args))
+      => (lambda (method)
+           (when (< (length args) 3)
+             (compile-error "(apply .~a obj ...) needs an object" method))
+           (match (spread-args (compile-exprs (cdr args) acc))
+             ((('spread obj) . _)
+              (compile-error "(apply .~a obj ...) needs an object" method))
+             ((obj . rest) `(call (dot ,obj ,method) ,@rest)))))
+     (else
+      (match (compile-exprs args acc)
+        ((f . exprs) (call-function f (spread-args exprs))))))))
 
 (define (compile-primitive-call prim args acc)
   (let ((argc (length args))

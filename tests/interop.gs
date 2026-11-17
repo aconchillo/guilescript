@@ -70,6 +70,10 @@
 ;; => { a: 1, b: 2 }
 
 ;; Methods can be used as values.
+;; apply with methods: the last argument is spread.
+(console-log (apply .concat '(1) 2 '((3 4) (5))))
+;; => [ 1, 2, 3, 4, 5 ]
+
 (define upcase .toUpperCase)
 (console-log (map .toUpperCase '("a" "b")) (upcase "c"))
 ;; => [ 'A', 'B' ] C
