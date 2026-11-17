@@ -390,6 +390,42 @@
                (else #f))))
     (and def (not (eq? (record-call-kind def) 'type)) def)))
 
+;; (call-with-values producer consumer). receive, let-values, etc. expand
+;; into it.
+(define (call-with-values? x)
+  (and (call? x)
+       (named-ref? (call-proc x) 'call-with-values)
+       (= 2 (length (call-args x)))))
+
+;; The clause of a lambda with only required arguments and an optional rest
+;; argument, or #f.
+(define (values-clause x)
+  (and (lambda? x)
+       (let ((clause (lambda-body x)))
+         (and (lambda-case? clause)
+              (not (lambda-case-alternate clause))
+              (not (lambda-case-opt clause))
+              (not (lambda-case-kw clause))
+              clause))))
+
+;; The body of PRODUCER if it's a thunk literal, or #f.
+(define (thunk-body producer)
+  (let ((clause (values-clause producer)))
+    (and clause
+         (null? (lambda-case-req clause))
+         (not (lambda-case-rest clause))
+         (lambda-case-body clause))))
+
+;; The parts of a call-with-values that are compiled inline: the producer
+;; and consumer bodies (if they are literal lambdas).
+(define (call-with-values-bodies x)
+  (match (call-args x)
+    ((producer consumer)
+     (append (if (thunk-body producer) (list (thunk-body producer)) (list producer))
+             (if (values-clause consumer)
+                 (list (lambda-case-body (values-clause consumer)))
+                 (list consumer))))))
+
 ;; (use-modules ...) expands into a call to process-use-modules.
 (define (use-modules-form? x)
   (and (call? x) (named-ref? (call-proc x) 'process-use-modules)))
@@ -493,7 +529,8 @@
          (_ #f))))
 
 (define %special-procedures
-  '(apply error throw raise raise-exception js-import js-global js-await))
+  '(apply error throw raise raise-exception js-import js-global js-await
+          call-with-values))
 
 ;; Does X use js-await, not counting nested functions (which would be async
 ;; themselves)? Inlined loops are not functions.
@@ -502,6 +539,7 @@
     (cond
      ((and (call? x) (named-ref? (call-proc x) 'js-await)) #t)
      ((try-call? x) (any walk (try-bodies x)))
+     ((call-with-values? x) (any walk (call-with-values-bodies x)))
      ((lambda? x) #f)
      ((and (letrec? x) (inline-loop? x))
       (or (any walk (call-args (letrec-body x)))
@@ -691,6 +729,9 @@
          (fail #f)))
      (let walk ((x body))
        (cond
+        ((and (call-with-values? x) (values-clause (cadr (call-args x))))
+         (no-refs! (car (call-args x)))
+         (walk (lambda-case-body (values-clause (cadr (call-args x))))))
         ((call? x)
          (if (target-ref? (call-proc x) target)
              (begin
@@ -788,6 +829,7 @@
   (let walk ((x body))
     (cond
      ((try-call? x) (any walk (try-bodies x)))
+     ((call-with-values? x) (any walk (call-with-values-bodies x)))
      ((lambda? x) (references-any? x gensyms))
      ((and (letrec? x) (inline-loop? x))
       (or (any walk (call-args (letrec-body x)))
@@ -1222,8 +1264,59 @@
      ((find-loop ctx proc)
       => (lambda (loop) (compile-loop-continue loop args ctx acc)))
      ((try-call? x) (compile-try args ctx acc))
+     ((and (call-with-values? x) (values-clause (cadr args)))
+      (compile-stmt (compile-values-bindings! args acc) ctx acc))
      ((throw-call? x) (compile-throw x acc))
      (else (deliver! ctx (compile-value x acc) acc)))))
+
+;;
+;; Multiple values
+;;
+;; Multiple values are arrays (a single value is just the value), so
+;; (call-with-values producer (lambda (a b . rest) body)) =>
+;;
+;;   const [a, b, ...rest] = <producer value>;
+;;   body
+
+;; The value of PRODUCER (already compiled into PRODUCER-JS).
+(define (producer-value producer producer-js)
+  (if (thunk-body producer)
+      (match producer-js
+        (('arrow () (('return e))) e)
+        (_ `(call ,producer-js)))
+      `(call ,producer-js)))
+
+;; Emit the bindings of the consumer (a lambda literal) and return its body.
+(define (compile-values-bindings! args acc)
+  (match args
+    ((producer consumer)
+     (let* ((clause (values-clause consumer))
+            (req (lambda-case-req clause))
+            (rest (lambda-case-rest clause))
+            (gensyms (lambda-case-gensyms clause))
+            (body (thunk-body producer)))
+       (cond
+        ;; A single value.
+        ((and (= 1 (length req)) (not rest))
+         (let ((gensym (car gensyms)))
+           (if body
+               (compile-declaration! (binding-kind gensym) (bind-local! gensym (car req)) body acc)
+               (emit! acc `(decl ,(binding-kind gensym) ,(bind-local! gensym (car req))
+                                 (call ,(compile-value producer acc)))))))
+        ;; No values.
+        ((and (null? req) (not rest))
+         (if body
+             (compile-stmt body 'effect acc)
+             (emit! acc `(expr-stmt (call ,(compile-value producer acc))))))
+        (else
+         (let* ((value (if body
+                           (compile-value body acc)
+                           `(call ,(compile-value producer acc))))
+                (kind (if (any lexical-assigned? gensyms) "let" "const"))
+                (names (map-in-order bind-local! (take gensyms (length req)) req))
+                (rest-name (and rest (bind-local! (list-ref gensyms (length req)) rest))))
+           (emit! acc `(decl-array ,kind ,names ,rest-name ,value)))))
+       (lambda-case-body clause)))))
 
 ;; (%js-try (lambda () body) (lambda (e) handler)) =>
 ;;
@@ -1698,6 +1791,16 @@
         (emit! acc `(decl "let" ,t #f))
         (compile-try args `(assign . ,t) acc)
         `(id ,t)))
+     ((call-with-values? x)
+      (if (values-clause (cadr args))
+          (compile-value (compile-values-bindings! args acc) acc)
+          ;; The values (an array) are the arguments of the consumer.
+          (match (compile-exprs args acc)
+            ((producer consumer)
+             (call-function consumer
+                            (match (producer-value (car args) producer)
+                              (('array . elts) elts)
+                              (e `((spread ,e)))))))))
      ((primitive-for proc)
       => (lambda (prim) (compile-primitive-call prim args acc)))
      ((named-ref? proc 'apply) (compile-apply args acc))
@@ -1718,6 +1821,15 @@
       (compile-error "use-modules is only allowed at the top level"))
      ((named-ref? proc 'js-global)
       (compile-error "js-global is only allowed at the top level"))
+     ((named-ref? proc '%js-values-ref)
+      (match args
+        ((values (? const? vars) (? const? var))
+         `(index ,(compile-value values acc)
+                 (num ,(list-index (cut eq? <> (const-exp var)) (const-exp vars)))))))
+     ((named-ref? proc '%js-values-rest)
+      (match args
+        ((values (? const? vars))
+         `(call (dot ,(compile-value values acc) "slice") (num ,(length (const-exp vars)))))))
      ((named-ref? proc 'js-await)
       (match args
         ((promise) `(unop "await " ,(compile-value promise acc)))

@@ -719,6 +719,23 @@
         (_ (compile-error "js-obj needs an even number of arguments"))))))
 
 ;;
+;; Multiple values are arrays (a single value is just the value).
+;;
+
+(define-primitive! 'values 0 #f
+  (simple-compiler
+   (lambda args
+     (match args
+       ((x) x)
+       (_ `(array ,@args)))))
+  #:value (lambda (fresh)
+            (let ((xs (fresh "xs")))
+              `(arrow ((rest ,xs))
+                      ((return (ternary (binop "===" (dot (id ,xs) "length") (num 1))
+                                        (index (id ,xs) (num 0))
+                                        (id ,xs))))))))
+
+;;
 ;; Errors
 ;;
 

@@ -41,7 +41,7 @@
 ;; Statements:
 ;;
 ;;   (expr-stmt E) (decl KIND NAME E) (fun-decl NAME PARAMS STMTS)
-;;   (async-fun-decl NAME PARAMS STMTS)
+;;   (async-fun-decl NAME PARAMS STMTS) (decl-array KIND NAMES REST E)
 ;;   (class NAME ((constructor PARAMS STMTS)))
 ;;   (return E) (if T STMTS STMTS) (while LABEL STMTS) (break LABEL)
 ;;   (continue LABEL) (throw E) (try STMTS NAME STMTS) (block STMTS) (export STMT)
@@ -310,6 +310,11 @@
     (match s
       (('expr-stmt e)
        (string-append pad (expression-statement e indent) ";\n"))
+      (('decl-array kind names rest value)
+       (string-append pad kind " ["
+                      (comma-list (append names
+                                          (if rest (list (string-append "..." rest)) '())))
+                      "] = " (expr value 2 indent) ";\n"))
       (('decl kind name value)
        (string-append pad kind " " name
                       (if value (string-append " = " (expr value 2 indent)) "")

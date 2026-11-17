@@ -69,6 +69,7 @@ TESTS = \
 	tests/prelude.gs \
 	tests/records.gs \
 	tests/strings.gs \
+	tests/values.gs \
 	$(EXAMPLES)
 
 TEST_EXTENSIONS = .gs

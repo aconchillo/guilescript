@@ -166,7 +166,7 @@ Some common modules:
 | `(ice-9 match)`, `(srfi srfi-26)`, `(srfi srfi-2)` | everything (they are macros) |
 | `(srfi srfi-1)`, `(srfi srfi-13)` | the built-in procedures (`fold`, `iota`, ...) |
 | `(srfi srfi-9)` | `define-record-type` (GuileScript's own) |
-| `(ice-9 receive)`, `(srfi srfi-11)` | not yet (multiple values) |
+| `(ice-9 receive)`, `(srfi srfi-11)` | everything (multiple values are arrays) |
 | `(ice-9 rdelim)`, `(ice-9 textual-ports)` | never (ports) |
 
 There's no need to check this by hand: anything that can't be used is a
@@ -223,6 +223,8 @@ GuileScript uses JavaScript data types and JavaScript semantics.
 | `'((name . "Ann") (age . 30))` | `{ name: "Ann", age: 30 }` |
 | `(make-hash-table)` | `new Map()` |
 | `(define-record-type <point> ...)` | `class Point { ... }` |
+| `(values a b)`, `(values x)` | `[a, b]`, `x` |
+| `(receive (a b) expr body ...)` | `const [a, b] = expr; body ...` |
 
 A few things to keep in mind:
 
@@ -233,6 +235,10 @@ A few things to keep in mind:
 - Symbols are strings, so `eq?` on two symbols compares strings.
 
 - `equal?` is JavaScript's `===`, it doesn't compare arrays deeply.
+
+- Multiple values are arrays (a single value is just the value), so
+  `receive`, `let-values`, `define-values` and `call-with-values` destructure
+  arrays.
 
 - Like in Guile, vector literals are constants: `#(1 2 x)` contains the
   symbol `x`. Use `(vector 1 2 x)` or `` `#(1 2 ,x) `` instead.
@@ -307,8 +313,9 @@ The record type (`<point>`) is the class (`Point`). The record procedures are
 only defined as functions if they are exported or used as values (e.g.
 `(map point-x points)`).
 
-GuileScript's `define-record-type` and `guard` are always used, even if a
-module providing Guile's versions (e.g. `(srfi srfi-9)`) is imported.
+GuileScript's `define-record-type`, `guard` and `define-values` are always
+used, even if a module providing Guile's versions (e.g. `(srfi srfi-9)`) is
+imported.
 
 ## JavaScript interoperability
 
@@ -386,6 +393,8 @@ These procedures are compiled inline into JavaScript (see
   make-hash-table hash-ref hash-set! hash-remove! hash-clear! hash-for-each
   hash-map->list`
 
+- Multiple values: `values call-with-values`
+
 - Errors: `error-object? error-object-message`
 
 - Logging: `console-log console-debug console-info console-warn
@@ -401,7 +410,7 @@ also [Guile modules](#guile-modules)).
 - A small (tree-shakeable) runtime for things that can't be done inline, like
   a deep `equal?` or `format`.
 
-- Multiple values, continuations, `dynamic-wind` and parameters.
+- Continuations, `dynamic-wind` and parameters.
 
 - `define-module`, so GuileScript files can import each other.
 

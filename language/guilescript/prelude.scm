@@ -26,7 +26,8 @@
 (define-module (language guilescript prelude)
   #:use-module (srfi srfi-1)
   #:export (guard
-            define-record-type))
+            define-record-type
+            define-values))
 
 ;; The JavaScript compiler compiles calls to %js-try into:
 ;;
@@ -111,3 +112,38 @@
      (begin
        (define accessor (%js-record-accessor type 'field))
        (define modifier (%js-record-modifier type 'field))))))
+;;
+;; Multiple values
+;;
+;; Multiple values are JavaScript arrays, so
+;;
+;;   (define-values (q r) (div-mod 7 2))
+;;
+;; is compiled into:
+;;
+;;   const tmp = divMod(7, 2);
+;;   const q = tmp[0];
+;;   const r = tmp[1];
+
+(define-syntax define-values
+  (syntax-rules ()
+    ((_ (var) expr)
+     (define var expr))
+    ((_ (var ...) expr)
+     (begin
+       (define tmp (call-with-values (lambda () expr) list))
+       (define var (%js-values-ref tmp '(var ...) 'var))
+       ...))
+    ((_ (var ... . rest) expr)
+     (begin
+       (define tmp (call-with-values (lambda () expr) list))
+       (define var (%js-values-ref tmp '(var ...) 'var))
+       ...
+       (define rest (%js-values-rest tmp '(var ...)))))))
+
+;; These also work in Guile.
+(define (%js-values-ref values vars var)
+  (list-ref values (list-index (lambda (v) (eq? v var)) vars)))
+
+(define (%js-values-rest values vars)
+  (list-tail values (length vars)))
