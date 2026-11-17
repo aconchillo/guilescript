@@ -270,25 +270,26 @@ These procedures are compiled inline into JavaScript (see
 
 - Numbers: =+ - * / = < > <= >= 1+ 1- abs ceiling floor round truncate max
   min sqrt exp log sin cos tan asin acos atan expt quotient remainder modulo
-  zero? positive? negative? odd? even? number? integer? nan? number->string
-  string->number=
+  zero? positive? negative? odd? even? number? integer? nan? exact inexact
+  exact->inexact inexact->exact number->string string->number=
 
-- Booleans and types: =not eq? eqv? equal? boolean? string? symbol? procedure?
-  list? vector? null? pair?=
+- Booleans and types: =not eq? eqv? equal? boolean? string? symbol? keyword?
+  char? procedure? list? vector? null? pair?=
 
 - Strings and characters: =string-length string-ref substring string-copy
   string-append string string-upcase string-downcase string-null?
   string-prefix? string-suffix? string-split string-join string-trim
   string-trim-right string-trim-both string->list list->string string=?
-  string<? string>? char->integer integer->char char-upcase char-downcase
-  string->symbol symbol->string=
+  string<? string>? string<=? string>=? char=? char<? char>? char<=? char>=?
+  char->integer integer->char char-upcase char-downcase string->symbol
+  symbol->string keyword->string=
 
-- Lists and vectors: =list cons car cdr cadr cddr caddr first second third
-  last length list-ref list-tail list-head take drop append reverse
-  list-copy map for-each filter remove fold fold-right reduce any every find
-  count delete delete-duplicates member memq memv iota make-list sort vector
-  make-vector vector-length vector-ref vector-set! vector-fill! vector-copy
-  vector->list list->vector=
+- Lists and vectors: =list cons car cdr caar cadr cdar cddr caddr cdddr
+  cadddr first second third fourth fifth last length list-ref list-tail
+  list-head take drop append reverse list-copy map for-each filter remove
+  fold fold-right reduce any every find count delete delete-duplicates
+  member memq memv iota make-list sort vector make-vector vector-length
+  vector-ref vector-set! vector-fill! vector-copy vector->list list->vector=
 
 - Association lists and hash tables: =assoc-ref assq-ref assv-ref
   make-hash-table hash-ref hash-set! hash-remove! hash-clear! hash-for-each
