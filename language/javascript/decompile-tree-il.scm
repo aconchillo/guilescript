@@ -46,6 +46,7 @@
 (define-module (language javascript decompile-tree-il)
   #:use-module (ice-9 control)
   #:use-module (ice-9 match)
+  #:use-module (ice-9 regex)
   #:use-module (language tree-il)
   #:use-module (language javascript errors)
   #:use-module (language javascript names)
@@ -68,7 +69,7 @@
 (define-record-type <unit>
   (make-unit env bindings defined assigned exports imported js-names
              lexical-assigned inline-loops emitted gensym-names scopes form-scope
-             records value-refs)
+             records value-refs aliases preferred-names renamed generated-names)
   unit?
   (env unit-env)                        ; module where the code was expanded
   (bindings unit-bindings)              ; name -> Guile binding (memoized)
@@ -88,7 +89,14 @@
   ;; Record definitions: name or gensym -> the %js-record-* call.
   (records unit-records)
   ;; Names and gensyms used as values (not only called).
-  (value-refs unit-value-refs))
+  (value-refs unit-value-refs)
+  ;; Copies: (let ((q t)) ...) where t is only used there. The variable t
+  ;; is named like q (preferred-names) and q is the same variable (aliases).
+  (aliases unit-aliases)                ; q gensym -> t gensym
+  (preferred-names unit-preferred-names) ; t gensym -> q name
+  (renamed unit-renamed)                ; t gensym -> #t once bound
+  ;; Top-level variables introduced by macros -> JavaScript name.
+  (generated-names unit-generated-names))
 
 (define current-unit (make-parameter #f))
 
@@ -97,7 +105,9 @@
              (make-hash-table) (make-hash-table) '() (make-hash-table)
              (make-hash-table) (make-hash-table) (make-hash-table)
              (make-hash-table) (make-hash-table) (list (make-hash-table))
-             (make-hash-table) (make-hash-table) (make-hash-table)))
+             (make-hash-table) (make-hash-table) (make-hash-table)
+             (make-hash-table) (make-hash-table) (make-hash-table)
+             (make-hash-table)))
 
 (define (user-defined? name)
   (let ((unit (current-unit)))
@@ -134,9 +144,42 @@
 
 (define (toplevel-js-name name)
   (let ((s (symbol->string name)))
-    (if (js-protected-global? s)
-        s
-        (scheme->js-name name))))
+    (cond
+     ((js-protected-global? s) s)
+     ((generated-name? name) (generated-js-name name))
+     (else (scheme->js-name name)))))
+
+;; Variables introduced by macros have names like t-14f049806a705a7e-16.
+(define (strip-generated-suffix name)
+  (let ((s (symbol->string name)))
+    (match (string-match "^(.+?)(-[0-9a-f]{12,}(-[0-9a-f]+)*)$" s)
+      (#f name)
+      (m (string->symbol (match:substring m 1))))))
+
+(define (generated-name? name)
+  (not (eq? name (strip-generated-suffix name))))
+
+;; Top-level variables introduced by macros get a readable unique name (e.g.
+;; tmp, tmp_1), chosen once all the other top-level names are known.
+(define (generated-js-name name)
+  (let* ((unit (current-unit))
+         (table (unit-generated-names unit)))
+    (or (hashq-ref table name)
+        (let* ((base (scheme->js-name (strip-generated-suffix name)))
+               (toplevel-scope (last (unit-scopes unit)))
+               (js (let lp ((i 0))
+                     (let ((candidate (if (zero? i)
+                                          base
+                                          (string-append base "_" (number->string i)))))
+                       (if (or (hash-ref (unit-js-names unit) candidate #f)
+                               (hash-ref toplevel-scope candidate #f)
+                               (js-reserved? candidate)
+                               (js-protected-global? candidate))
+                           (lp (+ i 1))
+                           candidate)))))
+          (hash-set! (unit-js-names unit) js name)
+          (hashq-set! table name js)
+          js))))
 
 (define (toplevel-scope?)
   (null? (cdr (unit-scopes (current-unit)))))
@@ -161,7 +204,9 @@
 ;; Declare a new variable in the current function scope. SOURCE is the
 ;; Scheme name (a symbol) or a JavaScript base name (a string).
 (define (declare-name! source)
-  (let ((base (if (string? source) source (scheme->js-name source))))
+  (let ((base (if (string? source)
+                  source
+                  (scheme->js-name (strip-generated-suffix source)))))
     (let lp ((i 0))
       (let ((candidate (if (zero? i)
                            base
@@ -181,6 +226,23 @@
   (let ((name (declare-name! source)))
     (set-gensym-name! gensym name)
     name))
+
+;; Like bind!, but a variable that is only copied into another one gets the
+;; name of the latter (see unit-aliases).
+(define (bind-local! gensym source)
+  (let ((preferred (hashq-ref (unit-preferred-names (current-unit)) gensym #f)))
+    (when preferred
+      (hashq-set! (unit-renamed (current-unit)) gensym #t))
+    (bind! gensym (or preferred source))))
+
+;; If GENSYM is a copy of a variable that already has its name, the JavaScript
+;; name of that variable.
+(define (alias-name gensym)
+  (let* ((unit (current-unit))
+         (original (hashq-ref (unit-aliases unit) gensym #f)))
+    (and original
+         (hashq-ref (unit-renamed unit) original #f)
+         (gensym-name original))))
 
 (define (set-gensym-name! gensym name)
   (hashq-set! (unit-gensym-names (current-unit)) gensym name))
@@ -495,7 +557,9 @@
 
 (define (analyze-form! x)
   (let ((unit (current-unit))
-        (called (make-hash-table)))
+        (called (make-hash-table))
+        (ref-counts (make-hash-table))
+        (copies '()))
     ;; References in call position.
     (tree-il-fold (lambda (y seed)
                     (when (call? y) (hashq-set! called (call-proc y) #t))
@@ -515,7 +579,16 @@
          (for-each (lambda (gensym val)
                      (when (record-call-kind val)
                        (hashq-set! (unit-records unit) gensym val)))
-                   (letrec-gensyms y) (letrec-vals y))))
+                   (letrec-gensyms y) (letrec-vals y)))
+        ((lexical-ref? y)
+         (hashq-set! ref-counts (lexical-ref-gensym y)
+                     (+ 1 (hashq-ref ref-counts (lexical-ref-gensym y) 0))))
+        ((let? y)
+         (for-each (lambda (name gensym val)
+                     (when (lexical-ref? val)
+                       (set! copies (cons (list gensym name (lexical-ref-gensym val))
+                                          copies))))
+                   (let-names y) (let-gensyms y) (let-vals y))))
        (cond
         ((and (not (eq? y x)) (or (js-import-form? y) (js-global-form? y)))
          (note-location! (or (tree-il-src y) (first-user-location y)))
@@ -540,7 +613,15 @@
              (register-js-name! name)))))
        seed)
      (lambda (y seed) seed)
-     #f x)))
+     #f x)
+    (for-each (match-lambda
+                ((gensym name original)
+                 (when (and (= 1 (hashq-ref ref-counts original 0))
+                            (not (lexical-assigned? original))
+                            (not (lexical-assigned? gensym)))
+                   (hashq-set! (unit-aliases unit) gensym original)
+                   (hashq-set! (unit-preferred-names unit) original name))))
+              copies)))
 
 ;; Every name used by the program must be defined, imported (js-import),
 ;; declared (js-global), a GuileScript built-in or a standard JavaScript
@@ -563,7 +644,12 @@
                       name module)))))
 
 ;; Two different Scheme names must not compile to the same JavaScript name.
+;; (Names introduced by macros get their JavaScript name later.)
 (define (register-js-name! name)
+  (unless (generated-name? name)
+    (register-user-js-name! name)))
+
+(define (register-user-js-name! name)
   (let* ((table (unit-js-names (current-unit)))
          (js (toplevel-js-name name))
          (owner (hash-ref table js #f)))
@@ -890,7 +976,9 @@
 
 (define (compile-let-bindings! x acc)
   (for-each (lambda (gensym name val)
-              (compile-declaration! (binding-kind gensym) (bind! gensym name) val acc))
+              (match (alias-name gensym)
+                (#f (compile-declaration! (binding-kind gensym) (bind-local! gensym name) val acc))
+                (original (set-gensym-name! gensym original))))
             (let-gensyms x) (let-names x) (let-vals x)))
 
 (define (compile-letrec-bindings! x acc)
