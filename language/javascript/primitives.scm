@@ -375,9 +375,27 @@
 (define-inline integer? (x) (call (js-path "Number.isInteger") x))
 (define-inline nan? (x) (call (js-path "Number.isNaN") x))
 
-(define-primitive! 'modulo 2 2
+(define (floor-remainder a b) (binop "%" (binop "+" (binop "%" a b) b) b))
+
+(define-primitive! '(modulo floor-remainder) 2 2
+  (simple-compiler floor-remainder)
+  #:dup 'all)
+
+(define-inline floor-quotient (a b) (call (js-path "Math.floor") (binop "/" a b)))
+(define-inline truncate-quotient (a b) (call (js-path "Math.trunc") (binop "/" a b)))
+(define-inline truncate-remainder (a b) (binop "%" a b))
+
+;; Two values (an array).
+(define-primitive! 'floor/ 2 2
   (simple-compiler
-   (lambda (a b) (binop "%" (binop "+" (binop "%" a b) b) b)))
+   (lambda (a b)
+     `(array ,(call (js-path "Math.floor") (binop "/" a b)) ,(floor-remainder a b))))
+  #:dup 'all)
+
+(define-primitive! 'truncate/ 2 2
+  (simple-compiler
+   (lambda (a b)
+     `(array ,(call (js-path "Math.trunc") (binop "/" a b)) ,(binop "%" a b))))
   #:dup 'all)
 
 (define-js-function! 'abs "Math.abs")

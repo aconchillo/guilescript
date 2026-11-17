@@ -21,6 +21,11 @@
 (console-log (round 2.5) (round 3.5) (round -2.5) (round 1.4) (map round '(0.5 1.5)))
 ;; => 2 4 -2 1 [ 0, 2 ]
 
+;; Integer division.
+(define-values (q r) (floor/ -7 2))
+(console-log q r (truncate/ -7 2) (modulo -7 2) (remainder -7 2) (quotient -7 2))
+;; => -4 1 [ -3, -1 ] 1 -1 -3
+
 ;; string->number is #f for anything that is not a number (including "").
 (define empty "")
 (console-log (string->number "-12.5") (string->number "1e3") (string->number empty)
