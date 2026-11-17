@@ -38,6 +38,9 @@
 ;; Arguments listed in DUP are used more than once in the result, so the
 ;; compiler makes sure they are simple (variables or literals) before
 ;; calling the primitive compiler.
+;;
+;; A few primitives need a helper function (e.g. equal? needs isEqual to
+;; compare arrays). Helpers are added to the modules that use them.
 
 ;;; Code:
 
@@ -57,6 +60,10 @@
             primitive-dup-indices
             primitive-compiler
             primitive-value-builder
+            primitive-helpers
+            current-helper-ref
+            helper-js-name
+            helper-definition
             js-path
             call-function
             js-negate
@@ -66,14 +73,15 @@
             constant-name))
 
 (define-record-type <primitive>
-  (make-primitive name min max dup compiler value)
+  (make-primitive name min max dup compiler value helpers)
   primitive?
   (name primitive-name)
   (min primitive-min-args)
   (max primitive-max-args)              ; #f means variadic
   (dup primitive-dup)                   ; #f, 'all, list or procedure
   (compiler primitive-compiler)
-  (value primitive-value-builder))      ; #f or (lambda (fresh) ...)
+  (value primitive-value-builder)       ; #f or (lambda (fresh) ...)
+  (helpers primitive-helpers))          ; helpers the primitive may use
 
 (define primitives (make-hash-table))
 
@@ -89,11 +97,49 @@
       ('all (iota argc))
       ((? list? indices) indices))))
 
-(define* (define-primitive! names min max compiler #:key dup value)
+(define* (define-primitive! names min max compiler #:key dup value (helpers '()))
   (for-each (lambda (name)
               (hashq-set! primitives name
-                          (make-primitive name min max dup compiler value)))
+                          (make-primitive name min max dup compiler value helpers)))
             (if (list? names) names (list names))))
+
+;;
+;; Helpers
+;;
+
+;; A procedure that returns the JavaScript variable of a helper (and adds
+;; the helper to the module).
+(define current-helper-ref (make-parameter #f))
+
+(define (helper-ref helper)
+  ((current-helper-ref) helper))
+
+(define (helper-js-name helper)
+  (match helper
+    ('equal "isEqual")))
+
+;; The definition of HELPER, a function named NAME.
+(define (helper-definition helper name)
+  (match helper
+    ;; function isEqual(a, b) {
+    ;;   if (Array.isArray(a) && Array.isArray(b)) {
+    ;;     return a.length === b.length && a.every((x, i) => isEqual(x, b[i]));
+    ;;   }
+    ;;   return a === b;
+    ;; }
+    ('equal
+     `(fun-decl ,name ((param "a") (param "b"))
+                ((if (binop "&&"
+                            (call (dot (id "Array") "isArray") (id "a"))
+                            (call (dot (id "Array") "isArray") (id "b")))
+                     ((return (binop "&&"
+                                     (binop "===" (dot (id "a") "length") (dot (id "b") "length"))
+                                     (call (dot (id "a") "every")
+                                           (arrow ((param "x") (param "i"))
+                                                  ((return (call (id ,name) (id "x")
+                                                                 (index (id "b") (id "i"))))))))))
+                     #f)
+                 (return (binop "===" (id "a") (id "b"))))))))
 
 ;;
 ;; Helpers
@@ -431,7 +477,7 @@
 (define-comparison! '(= char=? string=?) "===")
 
 ;; Two arrays are never ===, so (eq? x '()) is (null? x).
-(define-primitive! '(eq? eqv? equal?) 2 2
+(define-primitive! '(eq? eqv?) 2 2
   (simple-compiler
    (lambda (a b)
      (match (list a b)
@@ -441,6 +487,30 @@
   #:value (lambda (fresh)
             (let ((a (fresh "a")) (b (fresh "b")))
               (arrow (list a b) (binop "===" `(id ,a) `(id ,b))))))
+
+;; Is the JavaScript expression E never an array? (e.g. a string)
+(define (atom-expr? e)
+  (match e
+    ((or ('num _) ('str _) ('bool _) ('null) ('undefined)) #t)
+    (('binop (or "+" "-" "*" "/" "%" "**") _ _) #t)
+    ;; A variable can be anything, whatever its name.
+    ((or ('id _) ('dot _ _)) #f)
+    (_ (boolean-expr? e))))
+
+;; equal? compares lists and vectors element by element (with the isEqual
+;; helper), unless one of the values is a string, a number...
+(define (equal-expr a b)
+  (match (list a b)
+    ((('array) x) (binop "===" (prop x "length") (num 0)))
+    ((x ('array)) (binop "===" (prop x "length") (num 0)))
+    (_ (if (or (atom-expr? a) (atom-expr? b))
+           (binop "===" a b)
+           (call (helper-ref 'equal) a b)))))
+
+(define-primitive! 'equal? 2 2
+  (simple-compiler equal-expr)
+  #:value (lambda (fresh) (helper-ref 'equal))
+  #:helpers '(equal))
 (define-comparison! '(< char<? string<?) "<")
 (define-comparison! '(> char>? string>?) ">")
 (define-comparison! '(<= char<=? string<=?) "<=")
@@ -660,12 +730,37 @@
 (define-inline reverse (l) (method (copy-array l) "reverse"))
 (define-inline (list-copy vector->list list->vector) (l) (copy-array l))
 (define-inline vector-fill! (v x) (method v "fill" x))
-(define-inline (memq memv member) (x l)
+(define-inline (memq memv) (x l)
   (match l
     (('array y) (binop "===" x y))
     (_ (method l "includes" x))))
-(define-inline delete-duplicates (l)
-  `(array (spread (new (id "Set") ,l))))
+
+;; member, delete and delete-duplicates use equal?.
+(define-primitive! 'member 2 2
+  (lambda (args til fresh)
+    (match args
+      ((x ('array y)) (equal-expr x y))
+      ((x l)
+       (if (atom-expr? x)
+           (method l "includes" x)
+           (let ((y (fresh "y")))
+             (method l "some" (arrow (list y) (equal-expr `(id ,y) x))))))))
+  #:dup '(0)
+  #:helpers '(equal))
+
+;; l.filter((x, i) => l.findIndex((y) => isEqual(x, y)) === i)
+(define-primitive! 'delete-duplicates 1 1
+  (lambda (args til fresh)
+    (match args
+      ((l)
+       (let ((x (fresh "x")) (i (fresh "i")) (y (fresh "y")))
+         (method l "filter"
+                 (arrow (list x i)
+                        (binop "==="
+                               (method l "findIndex" (arrow (list y) (equal-expr `(id ,x) `(id ,y))))
+                               `(id ,i))))))))
+  #:dup '(0)
+  #:helpers '(equal))
 
 (define-primitive! 'vector-copy 1 3
   (simple-compiler
@@ -754,8 +849,9 @@
     (match args
       ((x l)
        (let ((y (fresh "y")))
-         (method l "filter" (arrow (list y) (binop "!==" `(id ,y) x)))))))
-  #:dup '(0))
+         (method l "filter" (arrow (list y) (js-negate (equal-expr `(id ,y) x))))))))
+  #:dup '(0)
+  #:helpers '(equal))
 
 ;; SRFI-1 fold calls (kons element accumulator).
 (define-primitive! 'fold 3 3

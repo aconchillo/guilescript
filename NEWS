@@ -17,6 +17,10 @@
     true. Tests that are not known to be booleans are compiled into
     x != null && x !== false.
 
+  - Like in Scheme, equal? (and member, delete and delete-duplicates)
+    compares lists and vectors element by element. A small isEqual function
+    is added to the modules that need it.
+
   - Scheme names are converted to camelCase JavaScript names (log-counter =>
     logCounter, even? => isEven, set-x! => setX). Reserved words are
     renamed and clashing names are a compilation error.

@@ -78,7 +78,7 @@
   (make-unit env bindings defined assigned exports imported js-names
              lexical-assigned inline-loops emitted gensym-names scopes form-scope
              records value-refs aliases preferred-names renamed generated-names
-             stmt-locations ref-counts)
+             stmt-locations ref-counts helper-names used-helpers)
   unit?
   (env unit-env)                        ; module where the code was expanded
   (bindings unit-bindings)              ; name -> Guile binding (memoized)
@@ -109,7 +109,11 @@
   ;; Statement -> source location (for source maps).
   (stmt-locations unit-stmt-locations)
   ;; gensym -> number of references.
-  (ref-counts unit-ref-counts))
+  (ref-counts unit-ref-counts)
+  ;; Helper functions (see primitives): helper -> JavaScript name, and
+  ;; helper -> #t once used.
+  (helper-names unit-helper-names)
+  (used-helpers unit-used-helpers))
 
 (define current-unit (make-parameter #f))
 
@@ -120,7 +124,8 @@
              (make-hash-table) (make-hash-table) (list (make-hash-table))
              (make-hash-table) (make-hash-table) (make-hash-table)
              (make-hash-table) (make-hash-table) (make-hash-table)
-             (make-hash-table) (make-hash-table) (make-hash-table)))
+             (make-hash-table) (make-hash-table) (make-hash-table)
+             (make-hash-table) (make-hash-table)))
 
 (define (user-defined? name)
   (let ((unit (current-unit)))
@@ -957,9 +962,11 @@
 ;;
 
 (define* (compile-program x #:optional env)
-  (parameterize ((current-unit (new-unit env)))
+  (parameterize ((current-unit (new-unit env))
+                 (current-helper-ref use-helper!))
     (reset-location!)
     (analyze! x)
+    (reserve-helper-names! x)
     (let ((acc (new-acc))
           (unit (current-unit)))
       (for-each (cut compile-toplevel <> acc) (toplevel-forms x))
@@ -968,7 +975,57 @@
                                (delete-duplicates (unit-exports unit)))))
         (unless (null? reexports)
           (emit! acc `(export-names ,(map toplevel-js-name reexports)))))
-      (values (acc-stmts acc) (unit-stmt-locations unit)))))
+      (values (add-helper-definitions (acc-stmts acc)) (unit-stmt-locations unit)))))
+
+;;
+;; Helper functions (e.g. isEqual for equal?) are added to the modules that
+;; use them. Their names are chosen before compiling, once all the top-level
+;; names are known, so that no variable shadows them.
+;;
+
+(define (reserve-helper-names! x)
+  (let* ((unit (current-unit))
+         (table (unit-js-names unit))
+         (helpers (tree-il-fold (lambda (y helpers)
+                                  (let ((prim (primitive-for y)))
+                                    (if prim
+                                        (lset-union eq? helpers (primitive-helpers prim))
+                                        helpers)))
+                                (lambda (y helpers) helpers)
+                                '() x)))
+    (for-each
+     (lambda (helper)
+       (let ((base (helper-js-name helper)))
+         (let lp ((i 0))
+           (let ((candidate (if (zero? i) base (string-append base "_" (number->string i)))))
+             (if (or (hash-ref table candidate #f)
+                     (js-reserved? candidate)
+                     (js-protected-global? candidate))
+                 (lp (+ i 1))
+                 (begin
+                   ;; The owner is no Scheme name, so variables can't use it.
+                   (hash-set! table candidate (make-symbol base))
+                   (hashq-set! (unit-helper-names unit) helper candidate)))))))
+     helpers)))
+
+(define (use-helper! helper)
+  (let* ((unit (current-unit))
+         (name (hashq-ref (unit-helper-names unit) helper #f)))
+    (unless name
+      (error "GuileScript: helper not reserved" helper))
+    (hashq-set! (unit-used-helpers unit) helper #t)
+    `(id ,name)))
+
+;; The definitions of the helpers used, after the imports.
+(define (add-helper-definitions stmts)
+  (let* ((unit (current-unit))
+         (helpers (sort (hash-map->list (lambda (helper _) helper) (unit-used-helpers unit))
+                        (lambda (a b) (string<? (symbol->string a) (symbol->string b)))))
+         (definitions (map (lambda (helper)
+                             (helper-definition helper (hashq-ref (unit-helper-names unit) helper)))
+                           helpers)))
+    (let-values (((imports rest) (span (match-lambda (('import . _) #t) (_ #f)) stmts)))
+      (append imports definitions rest))))
 
 ;; The first location in the user's file found in X (macro expansions might
 ;; not have one at the top).

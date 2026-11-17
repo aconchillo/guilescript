@@ -9,8 +9,8 @@ GuileScript compiles [Guile](https://www.gnu.org/software/guile/) to readable, m
 You write Scheme (with all of Guile's macro system) and you get the kind of
 JavaScript you would write by hand: `const`, `function`, arrow functions,
 `while` loops and ES modules. There is no runtime library: GuileScript uses
-JavaScript data and semantics, so the generated code works with any
-JavaScript library, npm package or bundler.
+JavaScript data, so the generated code works with any JavaScript library,
+npm package or bundler.
 
 ```scheme
 (js-import "canvas-confetti" #:default confetti)
@@ -411,7 +411,11 @@ A few things to keep in mind:
 
 - Symbols are strings, so `eq?` on two symbols compares strings.
 
-- `equal?` is JavaScript's `===`, it doesn't compare arrays deeply.
+- Like in Scheme, `equal?` compares lists and vectors element by element
+  (and so do `member`, `delete` and `delete-duplicates`), while `eq?` and
+  `eqv?` are `===`. A small `isEqual` function is added to the modules that
+  need it. Hash tables are `Map`s, which compare keys with `===`, so lists
+  used as keys are compared by identity.
 
 - Multiple values are arrays (a single value is just the value), so
   `receive`, `let-values`, `define-values` and `call-with-values` destructure
@@ -598,8 +602,7 @@ also [Guile modules](#guile-modules)).
 
 - `this` and classes (and `finally`).
 
-- A small (tree-shakeable) runtime for things that can't be done inline, like
-  a deep `equal?` or `format`.
+- `format`.
 
 - Continuations, `dynamic-wind` and parameters.
 

@@ -23,6 +23,23 @@
 (console-log (eq? none '()) (equal? '() xs) (eqv? none '()))
 ;; => true false true
 
+;; equal? compares lists and vectors element by element (eq? and eqv?
+;; compare identities), and so do member, delete and delete-duplicates.
+(define ys (list 1 (list 2 "x")))
+(console-log (equal? ys '(1 (2 "x"))) (equal? #(1 2) (vector 1 2)) (eq? ys '(1 (2 "x"))))
+;; => true true false
+
+(console-log (member '(2) '((1) (2))) (delete '(1) '((1) (2))) (delete-duplicates '((1) (1) 2)))
+;; => true [ [ 2 ] ] [ [ 1 ], 2 ]
+
+(console-log (map equal? '((1) 2) '((1) 3)) (equal? "a" "a") (equal? 1 2))
+;; => [ true, false ] true false
+
+;; Variables don't hide the helper function used by equal?.
+(define (same? is-equal) (equal? is-equal ys))
+(console-log (same? (list 1 (list 2 "x"))))
+;; => true
+
 (console-log (map (lambda (x) (* x x)) xs))
 ;; => [ 1, 4, 9, 16, 25 ]
 
