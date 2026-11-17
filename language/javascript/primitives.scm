@@ -68,6 +68,7 @@
             call-function
             js-negate
             boolean-expr?
+            current-boolean-name?
             truth
             substitute
             constant-name))
@@ -332,16 +333,19 @@
 ;; 0, "" and NaN are true.
 ;;
 
-;; Functions and variables that are booleans: GuileScript predicates (even?
-;; => isEven, has-children? => hasChildren) and JavaScript's isArray, has,
-;; includes...
-(define (boolean-js-name? name)
+;; A procedure that tells if a variable or function name is a boolean
+;; (GuileScript predicates: its Scheme name ends in ?, e.g. even? => isEven).
+(define current-boolean-name? (make-parameter (const #f)))
+
+;; Methods that return booleans: JavaScript's isArray, has, includes... (and
+;; GuileScript's, e.g. (.has-children? node) => node.hasChildren()).
+(define (boolean-method-name? name)
   (define (prefixed? prefix)
     (let ((n (string-length prefix)))
       (and (string-prefix? prefix name)
            (> (string-length name) n)
            (char-upper-case? (string-ref name n)))))
-  (or (member name '("is" "has" "includes" "startsWith" "endsWith" "some" "every" "test"))
+  (or (member name '("has" "includes" "startsWith" "endsWith" "some" "every" "test"))
       (prefixed? "is")
       (prefixed? "has")))
 
@@ -353,8 +357,8 @@
     (('binop (or "===" "!==" "==" "!=" "<" "<=" ">" ">=" "instanceof" "in") _ _) #t)
     (('binop (or "&&" "||") a b) (and (boolean-expr? a) (boolean-expr? b)))
     (('ternary _ a b) (and (boolean-expr? a) (boolean-expr? b)))
-    ((or ('id name) ('dot _ name)) (boolean-js-name? name))
-    (('call (or ('id name) ('dot _ name)) . _) (boolean-js-name? name))
+    ((or ('id name) ('call ('id name) . _)) ((current-boolean-name?) name))
+    (('call ('dot _ name) . _) (boolean-method-name? name))
     (_ #f)))
 
 ;; Variables and property accesses (a.b.c) can be read twice.

@@ -78,7 +78,7 @@
   (make-unit env bindings defined assigned exports imported js-names
              lexical-assigned inline-loops emitted gensym-names scopes form-scope
              records value-refs aliases preferred-names renamed generated-names
-             stmt-locations ref-counts helper-names used-helpers)
+             stmt-locations ref-counts helper-names used-helpers name-kinds)
   unit?
   (env unit-env)                        ; module where the code was expanded
   (bindings unit-bindings)              ; name -> Guile binding (memoized)
@@ -113,7 +113,10 @@
   ;; Helper functions (see primitives): helper -> JavaScript name, and
   ;; helper -> #t once used.
   (helper-names unit-helper-names)
-  (used-helpers unit-used-helpers))
+  (used-helpers unit-used-helpers)
+  ;; JavaScript name -> predicate (its Scheme name ends in ?), other or
+  ;; both (see boolean-name?).
+  (name-kinds unit-name-kinds))
 
 (define current-unit (make-parameter #f))
 
@@ -125,7 +128,7 @@
              (make-hash-table) (make-hash-table) (make-hash-table)
              (make-hash-table) (make-hash-table) (make-hash-table)
              (make-hash-table) (make-hash-table) (make-hash-table)
-             (make-hash-table) (make-hash-table)))
+             (make-hash-table) (make-hash-table) (make-hash-table)))
 
 (define (user-defined? name)
   (let ((unit (current-unit)))
@@ -186,11 +189,28 @@
     (if (js-protected-global? s) s (scheme->js-name name))))
 
 (define (toplevel-js-name name)
-  (let ((s (symbol->string name)))
-    (cond
-     ((js-protected-global? s) s)
-     ((generated-name? name) (generated-js-name name))
-     (else (scheme->js-name name)))))
+  (let* ((s (symbol->string name))
+         (js (cond
+              ((js-protected-global? s) s)
+              ((generated-name? name) (generated-js-name name))
+              (else (scheme->js-name name)))))
+    (note-name-kind! js name)
+    js))
+
+;; Variables and functions are booleans if their Scheme names end in ?
+;; (editing? => isEditing). The JavaScript name alone doesn't tell (is-open
+;; is also isOpen).
+(define (note-name-kind! js name)
+  (let* ((table (unit-name-kinds (current-unit)))
+         (kind (if (string-suffix? "?" (symbol->string (strip-generated-suffix name)))
+                   'predicate
+                   'other))
+         (old (hash-ref table js #f)))
+    (unless (eq? old kind)
+      (hash-set! table js (if old 'both kind)))))
+
+(define (boolean-name? js)
+  (eq? (hash-ref (unit-name-kinds (current-unit)) js #f) 'predicate))
 
 ;; Variables introduced by macros have names like t-14f049806a705a7e-16.
 (define (strip-generated-suffix name)
@@ -260,6 +280,8 @@
               (hash-set! (car (unit-scopes unit)) candidate #t)
               (when (toplevel-scope?)
                 (hash-set! (unit-form-scope unit) candidate #t))
+              (when (symbol? source)
+                (note-name-kind! candidate source))
               candidate))))))
 
 (define (fresh-name base)
@@ -963,7 +985,8 @@
 
 (define* (compile-program x #:optional env)
   (parameterize ((current-unit (new-unit env))
-                 (current-helper-ref use-helper!))
+                 (current-helper-ref use-helper!)
+                 (current-boolean-name? boolean-name?))
     (reset-location!)
     (analyze! x)
     (reserve-helper-names! x)

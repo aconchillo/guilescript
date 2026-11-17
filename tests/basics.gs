@@ -64,3 +64,10 @@
 
 (console-log (truthy #nil) (truthy (hash-ref (make-hash-table) 'none)) (not 0) (not #f))
 ;; => no no false true
+
+;; Only names that end in ? are assumed to be booleans (is-open is isOpen in
+;; JavaScript, like open?).
+(define (choose test) (if test 'yes 'no))
+(define is-open 0)
+(console-log (choose 0) (or is-open 'closed) (if (.includes "abc" "b") 'b 'none))
+;; => yes 0 b

@@ -405,7 +405,8 @@ A few things to keep in mind:
   `undefined` is false so that "not found" (`find`, `hash-ref`, a missing
   property) works like `#f`. When the compiler can't tell that a test is a
   boolean, it checks `x != null && x !== false`. Comparisons, predicates
-  and names that end in `?` (`isX` and `hasX` in JavaScript) are booleans.
+  (procedures and variables whose names end in `?`) and JavaScript methods
+  like `isArray` or `includes` are booleans.
 
 - Lists and vectors are both arrays, so `cons` and `cdr` copy the array.
 
