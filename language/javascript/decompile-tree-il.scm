@@ -2079,17 +2079,23 @@
            (not (hashq-ref (unit-gensym-names (current-unit)) (lexical-ref-gensym proc) #f)))
       (compile-error "internal error: call to an inlined loop outside of a tail position"))
      (else
-      (let-values (((positional keywords) (split-keyword-args args)))
-        (match (compile-exprs (append (list proc) positional (map cdr keywords)) acc)
-          ((f . exprs)
-           (let ((n (length positional)))
-             (call-function f
-                            (append
-                             (take exprs n)
-                             (if (null? keywords)
-                                 '()
-                                 `((object ,@(map (lambda (kw e) (cons (car kw) e))
-                                                  keywords (drop exprs n)))))))))))))))
+      (let-values (((f exprs) (compile-call-args proc args acc)))
+        (call-function f exprs))))))
+
+;; Compile CALLEE (a function, or the object of a method call) and its ARGS,
+;; left to right. Trailing keyword arguments become an options object.
+;; Returns the compiled callee and arguments.
+(define (compile-call-args callee args acc)
+  (let-values (((positional keywords) (split-keyword-args args)))
+    (match (compile-exprs (append (list callee) positional (map cdr keywords)) acc)
+      ((callee . exprs)
+       (let ((n (length positional)))
+         (values callee
+                 (append (take exprs n)
+                         (if (null? keywords)
+                             '()
+                             `((object ,@(map (lambda (kw e) (cons (car kw) e))
+                                              keywords (drop exprs n))))))))))))
 
 ;; (set! (.-prop obj) value) => obj.prop = value
 ;; (set! (js-ref obj 'a 'b) value) => obj.a.b = value
@@ -2109,16 +2115,8 @@
 (define (compile-method-call method args acc)
   (when (null? args)
     (compile-error "(.~a obj ...) needs an object to call the method on" method))
-  (let-values (((positional keywords) (split-keyword-args (cdr args))))
-    (match (compile-exprs (append (list (car args)) positional (map cdr keywords)) acc)
-      ((obj . exprs)
-       (let ((n (length positional)))
-         `(call (dot ,obj ,method)
-                ,@(take exprs n)
-                ,@(if (null? keywords)
-                      '()
-                      `((object ,@(map (lambda (kw e) (cons (car kw) e))
-                                       keywords (drop exprs n)))))))))))
+  (let-values (((obj exprs) (compile-call-args (car args) (cdr args) acc)))
+    `(call (dot ,obj ,method) ,@exprs)))
 
 (define (compile-apply args acc)
   (when (< (length args) 2)
