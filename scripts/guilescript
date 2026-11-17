@@ -34,6 +34,7 @@ exec ${GUILE:-guile} -e "(@@ (guilescript) main)" -s "$0" "$@"
   #:use-module (ice-9 textual-ports)
   #:use-module (srfi srfi-1)
   #:use-module (language guilescript compile)
+  #:use-module (language guilescript modules)
   #:use-module (language javascript errors)
   #:use-module (language javascript source-map))
 
@@ -97,34 +98,30 @@ Compile GuileScript files into JavaScript.
       (lambda results
         (apply values (append results (list mappings)))))))
 
-;; The relative path from the directory FROM to the file TO (both canonical).
-(define (relative-path from to)
-  (let lp ((from (string-split from #\/)) (to (string-split to #\/)))
-    (if (and (pair? from) (pair? (cdr to)) (string=? (car from) (car to)))
-        (lp (cdr from) (cdr to))
-        (string-join (append (map (const "..") from) to) "/"))))
-
 (define (source-content file)
   (call-with-input-file file get-string-all))
 
-;; Write the JavaScript code JS, compiled from SOURCE, to OUTPUT, and its
-;; source map (if there are MAPPINGS) to OUTPUT.map.
-(define (write-output output source js mappings)
+;; Write the JavaScript code JS to OUTPUT and, if there is one, its
+;; SOURCE-MAP (JSON) to OUTPUT.map.
+(define (write-js output js source-map)
   (call-with-output-file output
     (lambda (p)
       (display js p)
-      (when mappings
+      (when source-map
         (format p "//# sourceMappingURL=~a.map~%" (basename output)))))
-  (when mappings
+  (when source-map
     (call-with-output-file (string-append output ".map")
-      (lambda (p)
-        (display (source-map-json
-                  mappings
-                  #:file (basename output)
-                  #:source (relative-path (canonicalize-path (dirname output))
-                                          (canonicalize-path source))
-                  #:content (source-content source))
-                 p)))))
+      (lambda (p) (display source-map p)))))
+
+;; Write the JavaScript code JS, compiled from SOURCE, to OUTPUT, with a
+;; source map if there are MAPPINGS.
+(define (write-output output source js mappings)
+  (write-js output js
+            (and mappings
+                 (source-map-json mappings
+                                  #:file (basename output)
+                                  #:source (relative-file-path (dirname output) source)
+                                  #:content (source-content source)))))
 
 ;; Write JS to stdout, with an inline source map if there are MAPPINGS.
 (define (display-output source js mappings)
@@ -147,14 +144,7 @@ Compile GuileScript files into JavaScript.
      ((path js source-map)
       (let ((output (string-append output-dir "/" path ".js")))
         (mkdir-p (dirname output))
-        (call-with-output-file output
-          (lambda (p)
-            (display js p)
-            (when source-map
-              (format p "//# sourceMappingURL=~a.map~%" (basename output)))))
-        (when source-map
-          (call-with-output-file (string-append output ".map")
-            (lambda (p) (display source-map p)))))))
+        (write-js output js source-map))))
    (call-with-compile-errors (car files)
      (lambda ()
        (compile-modules files
@@ -165,8 +155,7 @@ Compile GuileScript files into JavaScript.
                         (lambda (file path)
                           (let ((output (string-append output-dir "/" path ".js")))
                             (mkdir-p (dirname output))
-                            (relative-path (canonicalize-path (dirname output))
-                                           (canonicalize-path file)))))))))
+                            (relative-file-path (dirname output) file))))))))
 
 (define (main args)
   (let* ((options (catch 'misc-error

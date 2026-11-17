@@ -49,7 +49,8 @@
             module-context-path
             module-context-dependencies
             current-module-context
-            transform-module-form))
+            transform-module-form
+            relative-file-path))
 
 (define-record-type <module-context>
   (%make-module-context file load-path source-imports? name root dependencies)
@@ -153,12 +154,16 @@
                            (string-concatenate (map (const "../") from)))
                        (string-join to "/")))))
 
+;; The relative path from the directory DIR to FILE: ./file, ../dir/file...
+(define (relative-file-path dir file)
+  (relative-path (string-split (canonicalize-path dir) #\/)
+                 (string-split (canonicalize-path file) #\/)))
+
 ;; The import path of the module NAME (in FILE) from the module being
 ;; compiled.
 (define (import-path ctx name file)
   (if (module-context-source-imports? ctx)
-      (relative-path (string-split (dirname (canonicalize-path (module-context-file ctx))) #\/)
-                     (string-split (canonicalize-path file) #\/))
+      (relative-file-path (dirname (canonicalize-path (module-context-file ctx))) file)
       (relative-path (drop-right (string-split (module-context-path ctx) #\/) 1)
                      (string-split (string-append (module-path name) ".js") #\/))))
 
