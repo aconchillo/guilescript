@@ -30,7 +30,9 @@ import { makeCounterButton } from "./counter.gs";
 Every `.gs` file is compiled with `guilescript`. GuileScript modules imported
 from a `.gs` file (with `define-module` or `use-modules`) are imported by the
 path of their `.gs` file, so they are compiled by the plugin too. Compilation
-errors are shown with their location in Vite's error overlay.
+errors are shown with their location in Vite's error overlay, and source maps
+map the compiled code back to the `.gs` files (in development and, with
+`build.sourcemap`, in production builds).
 
 ## Options
 

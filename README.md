@@ -223,8 +223,10 @@ export default defineConfig({
 <script type="module" src="/src/main.gs"></script>
 ```
 
-Compilation errors are shown with their location in Vite's error overlay. The
-plugin is not published on npm yet, so install it from this repository:
+Compilation errors are shown with their location in Vite's error overlay, and
+source maps map the code back to the `.gs` files (enable `build.sourcemap` to
+also have them in production builds). The plugin is not published on npm
+yet, so install it from this repository:
 
 ```console
 $ npm install --save-dev /path/to/guilescript/vite-plugin-guilescript

@@ -24,7 +24,8 @@ import { execFile } from "node:child_process";
  *
  * Every .gs file is compiled with the guilescript command, and GuileScript
  * modules are imported by the path of their .gs file, so they are compiled
- * by this plugin too.
+ * by this plugin too. Source maps map the compiled code back to the .gs
+ * files.
  *
  * @param {object} [options]
  * @param {string} [options.command] The guilescript command (default: the
@@ -45,7 +46,12 @@ export default function guilescript(options = {}) {
         return null;
       }
 
-      const args = ["--source-imports", ...loadPath.flatMap((dir) => ["-L", dir]), file];
+      const args = [
+        "--source-imports",
+        "--source-map",
+        ...loadPath.flatMap((dir) => ["-L", dir]),
+        file,
+      ];
       const { status, stdout, stderr } = await run(command, args);
 
       // Guile might also print notes (lines starting with ;;;).
@@ -67,7 +73,7 @@ export default function guilescript(options = {}) {
         );
       }
 
-      return { code: stdout, map: null };
+      return extractSourceMap(stdout, file);
     },
 
     // In development, Vite only transforms the files it knows are JavaScript
@@ -93,6 +99,20 @@ export default function guilescript(options = {}) {
       });
     },
   };
+}
+
+const inlineSourceMap =
+  /\n\/\/# sourceMappingURL=data:application\/json;charset=utf-8;base64,([A-Za-z0-9+/=]+)\s*$/;
+
+// guilescript writes the source map inline (at the end of the code).
+function extractSourceMap(output, file) {
+  const match = output.match(inlineSourceMap);
+  if (!match) {
+    return { code: output, map: null };
+  }
+  const map = JSON.parse(Buffer.from(match[1], "base64").toString("utf8"));
+  map.sources = [file];
+  return { code: output.slice(0, match.index + 1), map };
 }
 
 function run(command, args) {

@@ -45,6 +45,7 @@
   - Source maps: new --source-map option to generate source maps
     (FILE.js.map next to the compiled files, or inline when writing to
     stdout), so stack traces and developer tools point to the .gs files.
+    vite-plugin-guilescript generates them too.
 
   - vite-plugin-guilescript: a Vite plugin to use .gs files in Vite
     projects (see examples/vite). New --source-imports option to import

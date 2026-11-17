@@ -44,6 +44,14 @@ try {
   assert.match(result.code, /^console\.log\(shout\("hi"\)\);$/m);
   assert.deepEqual(warnings, []);
 
+  // The source map (removed from the code) maps the code to the .gs file.
+  assert.doesNotMatch(result.code, /sourceMappingURL/);
+  assert.equal(result.map.version, 3);
+  assert.deepEqual(result.map.sources, [main]);
+  assert.match(result.map.sourcesContent[0], /\(console-log \(shout "hi"\)\)/);
+  // import => line 1, console.log => line 2 (0-based lines 0 and 1 of the .gs file)
+  assert.equal(result.map.mappings, "AAAA;AACA");
+
   // Compilation errors have the location of the error.
   const broken = fixture("broken.gs", "(define (greet name)\n  (consle-log name))\n");
   await assert.rejects(plugin.transform.call(context, "", broken), (error) => {
