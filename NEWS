@@ -42,6 +42,10 @@
     export. New -d option to compile a file and all the GuileScript modules
     it imports, and -L to add directories where modules are searched.
 
+  - New (guilescript html) module: the html macro writes HTML elements with
+    an SXML-like syntax (instead of JSX). It calls h (hyperscript), so it
+    works with React, Preact or any library with such a function.
+
   - compile-modules compiles GuileScript files and the modules they import
     from Guile programs (e.g. a web server). -L directories are also
     searched for Guile modules (e.g. with macros).

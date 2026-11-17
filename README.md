@@ -294,6 +294,50 @@ Some common modules:
 There's no need to check this by hand: anything that can't be used is a
 compilation error that says which name and which module.
 
+## HTML elements
+
+`(guilescript html)` (a Guile module shipped with GuileScript) has the `html`
+macro, to write HTML elements with an SXML-like syntax instead of JSX:
+
+```scheme
+(use-modules (guilescript html))
+(js-import "react" #:rename '((createElement . h)))
+
+(define (<task-item> props)
+  (let ((task (.-task props)))
+    (html (li #:class-name ,(if (.-done task) "task done" "task")
+              (input #:type "checkbox" #:checked ,(.-done task))
+              (span #:class-name "title" ,(.-title task))))))
+
+(define (<task-list> props)
+  (html (ul ,(map (lambda (task) (html (<task-item> #:key ,(.-id task) #:task task)))
+                  (.-tasks props)))))
+```
+
+`(tag #:property value ... child ...)` is an element: `tag` is an HTML tag,
+or a component if it's like `<task-item>`. Property names are camelCase
+(`#:class-name` is `className`). Values and children are strings, numbers,
+variables, elements or `,expression` (any expression, e.g. a list of
+elements). The code above compiles into:
+
+```javascript
+function TaskItem(props) {
+  const task = props.task;
+  return h(
+    "li",
+    { className: task.done ? "task done" : "task" },
+    h("input", { type: "checkbox", checked: task.done }),
+    h("span", { className: "title" }, task.title)
+  );
+}
+```
+
+`html` calls `h`, the [hyperscript](https://github.com/hyperhype/hyperscript)
+convention `(h type properties child ...)`, so it works with any library with
+such a function: React (`createElement`, imported as `h` above), Preact
+(`(js-import "preact" h)`), or your own (see `examples/task-manager`, which
+has both a React version and a version that creates DOM elements).
+
 ## Names
 
 Scheme names are converted to camelCase JavaScript names, so the code reads

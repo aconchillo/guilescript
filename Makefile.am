@@ -21,7 +21,8 @@
 
 SUBDIRS = \
 	language/javascript \
-	language/guilescript
+	language/guilescript \
+	guilescript
 
 dist_bin_SCRIPTS = scripts/guilescript
 
@@ -61,6 +62,7 @@ TESTS = \
 	tests/functions.gs \
 	tests/globals.gs \
 	tests/guard.gs \
+	tests/html.gs \
 	tests/guile-modules.gs \
 	tests/interop.gs \
 	tests/lists.gs \

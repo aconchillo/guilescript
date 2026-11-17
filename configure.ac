@@ -51,6 +51,7 @@ AC_CONFIG_FILES([
    Makefile
    language/javascript/Makefile
    language/guilescript/Makefile
+   guilescript/Makefile
 ])
 AC_CONFIG_FILES([env], [chmod +x env])
 
