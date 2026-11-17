@@ -445,19 +445,26 @@
                                         (arrow (list a b) (binop "*" `(id ,a) `(id ,b)))
                                         (num 1))))))))
 
+(define (minus-value op one-arg)
+  ;; (x, ...ys) => ys.length === 0 ? -x : ys.reduce((a, b) => a - b, x)
+  (lambda (fresh)
+    (let ((x (fresh "x")) (ys (fresh "ys")) (a (fresh "a")) (b (fresh "b")))
+      `(arrow ((param ,x) (rest ,ys))
+              ((return (ternary (binop "===" (dot (id ,ys) "length") (num 0))
+                                ,(one-arg `(id ,x))
+                                ,(method `(id ,ys) "reduce"
+                                         (arrow (list a b) (binop op `(id ,a) `(id ,b)))
+                                         `(id ,x)))))))))
+
 (define-primitive! '- 1 #f
   (simple-compiler
    (lambda args (if (null? (cdr args)) (unop "-" (car args)) (left-fold "-" args))))
-  #:value (lambda (fresh)
-            (let ((a (fresh "a")) (b (fresh "b")))
-              (arrow (list a b) (binop "-" `(id ,a) `(id ,b))))))
+  #:value (minus-value "-" (lambda (x) (unop "-" x))))
 
 (define-primitive! '/ 1 #f
   (simple-compiler
    (lambda args (if (null? (cdr args)) (binop "/" (num 1) (car args)) (left-fold "/" args))))
-  #:value (lambda (fresh)
-            (let ((a (fresh "a")) (b (fresh "b")))
-              (arrow (list a b) (binop "/" `(id ,a) `(id ,b))))))
+  #:value (minus-value "/" (lambda (x) (binop "/" (num 1) x))))
 
 (define (define-comparison! names op)
   (define-primitive! names 1 #f
@@ -470,9 +477,17 @@
                                  (drop-right args 1)
                                  (cdr args)))))))
     #:dup (lambda (argc) (and (> argc 2) 'all))
+    ;; (...xs) => xs.every((x, i) => i === 0 || xs[i - 1] < x)
     #:value (lambda (fresh)
-              (let ((a (fresh "a")) (b (fresh "b")))
-                (arrow (list a b) (binop op `(id ,a) `(id ,b)))))))
+              (let ((xs (fresh "xs")) (x (fresh "x")) (i (fresh "i")))
+                `(arrow ((rest ,xs))
+                        ((return ,(method `(id ,xs) "every"
+                                          (arrow (list x i)
+                                                 (binop "||"
+                                                        (binop "===" `(id ,i) (num 0))
+                                                        (binop op
+                                                               `(index (id ,xs) ,(binop "-" `(id ,i) (num 1)))
+                                                               `(id ,x))))))))))))
 
 (define-comparison! '(= char=? string=?) "===")
 
@@ -806,11 +821,24 @@
 (define (lists-dup argc)
   (cons 0 (iota (- argc 2) 2)))
 
+;; (f, l, ...ls) => l.map((x, i) => f(x, ...ls.map((m) => m[i])))
+(define (lists-value js-method)
+  (lambda (fresh)
+    (let ((f (fresh "f")) (l (fresh "l")) (ls (fresh "ls"))
+          (x (fresh "x")) (i (fresh "i")) (m (fresh "m")))
+      `(arrow ((param ,f) (param ,l) (rest ,ls))
+              ((return ,(method `(id ,l) js-method
+                                (arrow (list x i)
+                                       `(call (id ,f) (id ,x)
+                                              (spread ,(method `(id ,ls) "map"
+                                                               (arrow (list m) `(index (id ,m) (id ,i))))))))))))))
+
 (define-primitive! 'map 2 #f
   (lambda (args til fresh)
     (match args
       ((f l . ls) (method l "map" (lists-callback f (first til) ls fresh)))))
-  #:dup lists-dup)
+  #:dup lists-dup
+  #:value (lists-value "map"))
 
 (define-primitive! 'for-each 2 #f
   (lambda (args til fresh)
@@ -823,7 +851,8 @@
                            "the function given to for-each uses js-await, but for-each doesn't wait for it (use a loop, or map and Promise.all)"))
          (_ #t))
        (method l "forEach" (lists-callback f (first til) ls fresh)))))
-  #:dup lists-dup)
+  #:dup lists-dup
+  #:value (lists-value "forEach"))
 (define-predicate-method! 'filter "filter")
 (define-predicate-method! 'any "some")
 (define-predicate-method! 'every "every")

@@ -46,6 +46,7 @@ TESTS = \
 	tests/error-association-list.gs \
 	tests/error-await.gs \
 	tests/error-dotted-pair.gs \
+	tests/error-primitive-value.gs \
 	tests/error-guile-module.gs \
 	tests/error-guile-module-replace.gs \
 	tests/error-guile-procedure.gs \

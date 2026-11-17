@@ -74,6 +74,17 @@
 (console-log (apply max 1 '(5 3)) (apply + 1 2 '(3 4)) (apply list '(1 2)))
 ;; => 5 10 [ 1, 2 ]
 
+;; Built-in procedures used as values take all their arguments.
+(define nums '(1 2 3))
+(define (call2 f) (f 6 2))
+(console-log (apply - nums) (apply < nums) (apply < '(1 2 0)) (apply substring (list "hello" 1 3)))
+;; => -4 true false el
+(console-log (call2 -) (call2 /) (call2 >) (call2 number->string) (call2 iota))
+;; => 4 3 true 110 [ 2, 3, 4, 5, 6, 7 ]
+(define rows '((1 2) (3 4)))
+(console-log (apply map list rows) (map (lambda (f) (f 10 2)) (list - = max)))
+;; => [ [ 1, 3 ], [ 2, 4 ] ] [ 8, false, 10 ]
+
 (define add (lambda (a b) (+ a b)))
 (console-log (add 1 2) (map car '((1 2) (3 4))))
 ;; => 3 [ 1, 3 ]

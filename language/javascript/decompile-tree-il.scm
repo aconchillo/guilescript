@@ -1737,15 +1737,25 @@
   (cond
    ((primitive-value-builder prim)
     => (lambda (build) (call-with-function-scope (lambda () (build fresh-name)))))
+   ((not (primitive-max-args prim))
+    (compile-error "`~a' can't be used as a value" (primitive-name prim)))
    (else
+    ;; A function with all the parameters. Optional ones that are not given
+    ;; are undefined: (s, start, end) => end === undefined ? ... : ...
     (call-with-function-scope
      (lambda ()
        (let* ((params (map-in-order (lambda (_) (fresh-name "x"))
-                                    (iota (primitive-min-args prim))))
-              (args (map (lambda (p) `(id ,p)) params)))
+                                    (iota (primitive-max-args prim))))
+              (call-with (lambda (n)
+                           (let ((args (map (lambda (p) `(id ,p)) (list-head params n))))
+                             ((primitive-compiler prim) args (map (const #f) args) fresh-name)))))
          `(arrow ,(map (lambda (p) `(param ,p)) params)
-                 ((return ,((primitive-compiler prim) args (map (const #f) params)
-                            fresh-name))))))))))
+                 ((return ,(let lp ((n (primitive-min-args prim)))
+                             (if (= n (length params))
+                                 (call-with n)
+                                 `(ternary (binop "===" (id ,(list-ref params n)) (undefined))
+                                           ,(call-with n)
+                                           ,(lp (+ n 1))))))))))))))
 
 (define (toplevel-value x)
   (let ((name (toplevel-ref-name x)))
@@ -2068,7 +2078,13 @@
   (let ((prim (primitive-for (car args))))
     (cond
      (prim
-      (call-function (primitive-value prim) (spread-args (compile-exprs (cdr args) acc))))
+      (let ((exprs (spread-args (compile-exprs (cdr args) acc))))
+        (if (any (match-lambda (('spread _) #t) (_ #f)) exprs)
+            (call-function (primitive-value prim) exprs)
+            ;; All the arguments are known: (apply + 1 '(2 3)) => 1 + 2 + 3
+            (begin
+              (check-primitive-arity prim (length exprs))
+              (apply-primitive prim exprs (map (const #f) exprs) acc)))))
      ;; (apply .method obj arg ... list) => obj.method(arg, ..., ...list)
      ((method-ref (car args))
       => (lambda (method)
@@ -2082,14 +2098,21 @@
       (match (compile-exprs args acc)
         ((f . exprs) (call-function f (spread-args exprs))))))))
 
-(define (compile-primitive-call prim args acc)
-  (let ((argc (length args))
-        (min (primitive-min-args prim))
+(define (check-primitive-arity prim argc)
+  (let ((min (primitive-min-args prim))
         (max (primitive-max-args prim)))
     (when (or (< argc min) (and max (> argc max)))
-      (compile-error "wrong number of arguments to `~a'" (primitive-name prim)))
+      (compile-error "wrong number of arguments to `~a'" (primitive-name prim)))))
+
+(define (compile-primitive-call prim args acc)
+  (check-primitive-arity prim (length args))
+  (apply-primitive prim (compile-exprs args acc) args acc))
+
+;; Compile PRIM with the compiled arguments EXPRS (TILS are the Tree-IL
+;; arguments, or #f).
+(define (apply-primitive prim exprs tils acc)
+  (let ((argc (length exprs)))
     (let* ((dups (primitive-dup-indices prim argc))
-           (exprs (compile-exprs args acc))
            ;; Arguments used more than once are evaluated into temporaries
            ;; (together with the previous ones, to keep the evaluation
            ;; order).
@@ -2104,4 +2127,4 @@
       ;; Names created by primitives are parameters of the functions they
       ;; create, so they don't need to be reserved in the current scope.
       (call-with-function-scope
-       (lambda () ((primitive-compiler prim) exprs args fresh-name))))))
+       (lambda () ((primitive-compiler prim) exprs tils fresh-name))))))
