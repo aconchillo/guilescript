@@ -27,7 +27,8 @@
   #:use-module ((system base compile) #:prefix system:)
   #:use-module ((system base language) #:select (default-environment))
   #:use-module (language javascript errors)
-  #:export (compile compile-file))
+  #:use-module (language guilescript modules)
+  #:export (compile compile-file compile-module-file))
 
 ;; The code is expanded in a fresh module (ENV), which is also given to the
 ;; JavaScript compiler so it knows where imported names come from.
@@ -38,12 +39,29 @@
      (system:compile exp #:from 'guilescript #:to 'tree-il #:env env)
      #:from 'tree-il #:to 'javascript #:env env)))
 
-(define (compile-file filename)
-  (call-with-source-file filename
-    (lambda ()
-      (call-with-input-file filename
-        (lambda (p)
-          (let* ((env (default-environment 'guilescript))
-                 (tree-il (system:read-and-compile p #:from 'guilescript #:to 'tree-il
-                                                   #:env env)))
-            (system:decompile tree-il #:from 'tree-il #:to 'javascript #:env env)))))))
+;; Compile FILENAME into JavaScript. Returns the JavaScript code, the path of
+;; the compiled module (without extension, e.g. "app/util" for the module
+;; (app util)) and the GuileScript modules it imports: ((NAME . FILE) ...).
+;; GuileScript modules are also searched in the LOAD-PATH directories.
+(define* (compile-module-file filename #:key (load-path '()))
+  (let ((ctx (make-module-context filename load-path)))
+    (call-with-source-file filename
+      (lambda ()
+        (parameterize ((current-module-context ctx))
+          (call-with-input-file filename
+            (lambda (p)
+              (let* ((env (default-environment 'guilescript))
+                     (tree-il (system:read-and-compile p #:from 'guilescript #:to 'tree-il
+                                                       #:env env))
+                     (js (call-with-values
+                             (lambda ()
+                               (system:decompile tree-il #:from 'tree-il #:to 'javascript
+                                                 #:env env))
+                           (lambda (js . _) js))))
+                (values js
+                        (module-context-path ctx)
+                        (module-context-dependencies ctx))))))))))
+
+(define* (compile-file filename #:key (load-path '()))
+  (call-with-values (lambda () (compile-module-file filename #:load-path load-path))
+    (lambda (js path dependencies) js)))

@@ -36,6 +36,12 @@
     inline. New js-obj, js-typeof, js-instanceof and js-delete!. js-ref and
     js-set! accept property paths.
 
+  - define-module: GuileScript modules (e.g. (app util) in app/util.gs) are
+    compiled into ES modules, and importing them (with define-module or
+    use-modules, also with #:select or #:prefix) imports the names they
+    export. New -d option to compile a file and all the GuileScript modules
+    it imports, and -L to add directories where modules are searched.
+
   - js-import #:rename '((name . local-name) ...) to rename imported names.
 
   - use-modules: macros from any Guile module can be used (e.g. match or

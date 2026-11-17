@@ -43,13 +43,14 @@ TESTS = \
 	tests/basics.gs \
 	tests/control.gs \
 	tests/error-await.gs \
-	tests/error-define-module.gs \
 	tests/error-dotted-pair.gs \
 	tests/error-guile-module.gs \
 	tests/error-guile-module-replace.gs \
 	tests/error-guile-procedure.gs \
 	tests/error-import.gs \
 	tests/error-method.gs \
+	tests/error-module-export.gs \
+	tests/error-module-name.gs \
 	tests/error-name-clash.gs \
 	tests/error-optional-key.gs \
 	tests/error-parameterize.gs \
@@ -67,6 +68,7 @@ TESTS = \
 	tests/modules.gs \
 	tests/names.gs \
 	tests/prelude.gs \
+	tests/project.gs \
 	tests/records.gs \
 	tests/strings.gs \
 	tests/values.gs \
@@ -81,5 +83,8 @@ AM_TESTS_ENVIRONMENT = \
 
 EXTRA_DIST = \
 	$(TESTS) \
+	tests/project/greetings.gs \
+	tests/project/shapes/circle.gs \
+	tests/project/util.gs \
 	tests/run-test \
 	examples/fibonacci-server.scm

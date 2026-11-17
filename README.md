@@ -133,10 +133,51 @@ language and uses JavaScript as the runtime. So, for any feature:
 
 If you need Guile's runtime in the browser, use [Guile Hoot](https://spritely.institute/hoot/).
 
+## GuileScript modules
+
+A GuileScript program can be split into modules. The module `(app util)` is
+the file `app/util.gs`:
+
+```scheme
+(define-module (app util)
+  #:export (shout))
+
+(define (shout s)
+  (string-append (string-upcase s) "!"))
+```
+
+```scheme
+(define-module (app main)
+  #:use-module (app util))
+
+(console-log (shout "hello"))
+```
+
+Each module is compiled into an ES module, and importing a GuileScript module
+imports the names it exports:
+
+```javascript
+import { shout } from "./util.js";
+console.log(shout("hello"));
+```
+
+Compile a file and all the GuileScript modules it imports with `-d`:
+
+```console
+$ guilescript -d dist src/app/main.gs
+```
+
+This writes `dist/app/main.js` and `dist/app/util.js`. GuileScript modules are
+searched relative to the module being compiled (`src/` here) and in the
+directories given with `-L`. `#:select` and `#:prefix` work as usual.
+
+GuileScript modules export functions and values. Macros can be shared through
+Guile modules.
+
 ## Guile modules
 
-GuileScript only compiles the file you give it, but it can use Guile modules
-imported with `use-modules`. For every name imported from a module:
+Modules that are not GuileScript modules are Guile modules. For every name
+imported from a Guile module:
 
 - Macros (`match`, `cut`, `receive`...) can always be used, they are expanded
   at compile time. This also means macros can be shared between Guile code
@@ -172,8 +213,6 @@ Some common modules:
 
 There's no need to check this by hand: anything that can't be used is a
 compilation error that says which name and which module.
-
-`define-module` is not supported yet.
 
 ## Names
 
@@ -413,15 +452,15 @@ also [Guile modules](#guile-modules)).
 
 - Continuations, `dynamic-wind` and parameters.
 
-- `define-module`, so GuileScript files can import each other.
-
 - Source maps and a bundler plugin.
 
 ## Hacking
 
 Run the test suite with `make check` (it needs Node.js). Each test in `tests/`
 is a GuileScript program with its expected output in `;; => ...` comments
-(or an expected compilation error in `;; error: ...` comments).
+(or an expected compilation error in `;; error: ...` comments). Tests are
+compiled with `-d`, so they can import GuileScript modules (e.g. the ones in
+`tests/project/`).
 
 ## License
 
