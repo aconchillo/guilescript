@@ -125,7 +125,15 @@ function extractSourceMap(output, file) {
 function run(command, args) {
   return new Promise((resolve, reject) => {
     execFile(command, args, { maxBuffer: 64 * 1024 * 1024 }, (error, stdout, stderr) => {
-      if (error && typeof error.code !== "number") {
+      if (error?.code === "ENOENT") {
+        reject(
+          new Error(
+            `vite-plugin-guilescript: ${command} not found. Install GuileScript, ` +
+              "or set the GUILESCRIPT environment variable (or the command option) " +
+              "to the guilescript command.",
+          ),
+        );
+      } else if (error && typeof error.code !== "number") {
         reject(new Error(`vite-plugin-guilescript: could not run ${command}: ${error.message}`));
       } else {
         resolve({ status: error ? error.code : 0, stdout, stderr });

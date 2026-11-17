@@ -63,7 +63,7 @@ try {
 
   // A missing guilescript command is reported.
   const missing = guilescript({ command: join(dir, "no-such-guilescript") });
-  await assert.rejects(missing.transform.call(context, "", main), /could not run/);
+  await assert.rejects(missing.transform.call(context, "", main), /no-such-guilescript not found\. Install GuileScript/);
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }
