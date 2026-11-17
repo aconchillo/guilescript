@@ -1,5 +1,5 @@
 
-* Next version (unreleased)
+* Version 1.0.0 (unreleased)
 
   - New code generator: Tree-IL is compiled into a JavaScript AST which is
     then printed. The output is readable modern JavaScript (const/let,
