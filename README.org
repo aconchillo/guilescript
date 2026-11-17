@@ -116,6 +116,72 @@ with any bundler (esbuild, Vite, webpack...).
 | (export f g)                         | adds export to the definitions of f and g     |
 |--------------------------------------+-----------------------------------------------|
 
+* What works and what never will
+
+Guile is two things: a language (its syntax and macros) and a runtime (its
+data types, ports, continuations, threads...). GuileScript compiles the
+language and uses JavaScript as the runtime. So, for any feature:
+
+- If it only exists at compile time, it works: macros, =syntax-rules=,
+  =syntax-case=, quasiquote...
+
+- If JavaScript has an equivalent, it works or it will: numbers, strings,
+  lists and vectors (arrays), hash tables (=Map=), closures, loops, errors,
+  records (classes), multiple values (arrays), modules (ES modules)...
+
+- If it only exists in Guile's runtime, it will never work: ports,
+  first-class continuations (=call/cc=), =dynamic-wind=, threads, the numeric
+  tower (exact rationals, automatic big integers), mutable pairs
+  (=set-cdr!=), circular lists, =eval= at runtime... Use the JavaScript
+  equivalents instead (=console=, =fetch=, streams, promises...).
+
+If you need Guile's runtime in the browser, use [[https://spritely.institute/hoot/][Guile Hoot]].
+
+* Guile modules
+
+GuileScript only compiles the file you give it, but it can use Guile modules
+imported with =use-modules=. For every name imported from a module:
+
+- Macros (=match=, =cut=, =receive=...) can always be used, they are expanded
+  at compile time. This also means macros can be shared between Guile code
+  and GuileScript code.
+
+- Procedures that GuileScript compiles inline (see [[*Built-in procedures][Built-in procedures]]) can be
+  used, also when they are renamed with =#:select= or =#:prefix=.
+
+- Any other procedure is a compilation error, since it would only exist in
+  Guile.
+
+#+BEGIN_SRC scheme
+(use-modules (ice-9 match)
+             ((srfi srfi-1) #:prefix s1:))
+
+(define (area shape)
+  (match shape
+    (('circle r) (* 3 r r))
+    (('rect w h) (* w h))))
+
+(s1:fold + 0 (map area shapes))
+#+END_SRC
+
+Some common modules:
+
+| Module                                          | What can be used                               |
+|-------------------------------------------------+------------------------------------------------|
+| (ice-9 match), (srfi srfi-26), (srfi srfi-2)    | everything (they are macros)                   |
+|-------------------------------------------------+------------------------------------------------|
+| (srfi srfi-1), (srfi srfi-13)                   | the built-in procedures (fold, iota, ...)      |
+|-------------------------------------------------+------------------------------------------------|
+| (srfi srfi-9), (ice-9 receive), (srfi srfi-11)  | not yet (records and multiple values)          |
+|-------------------------------------------------+------------------------------------------------|
+| (ice-9 rdelim), (ice-9 textual-ports)           | never (ports)                                  |
+|-------------------------------------------------+------------------------------------------------|
+
+There's no need to check this by hand: anything that can't be used is a
+compilation error that says which name and which module.
+
+=define-module= is not supported yet.
+
 * Names
 
 Scheme names are converted to camelCase JavaScript names, so the code reads
@@ -298,8 +364,9 @@ These procedures are compiled inline into JavaScript (see
 - Logging: =console-log console-debug console-info console-warn
   console-error=
 
-The compiler warns when a program uses other Guile procedures (e.g. =display=),
-since they would be called as JavaScript globals.
+Using other procedures from Guile core (e.g. =display=) gives a warning, since
+they will be called as JavaScript globals. Using other procedures from modules
+imported with =use-modules= is an error (see [[*Guile modules][Guile modules]]).
 
 * What's missing?
 
@@ -309,6 +376,8 @@ since they would be called as JavaScript globals.
   a deep =equal?= or =format=.
 
 - Multiple values, continuations, =dynamic-wind= and parameters.
+
+- =define-module=, so GuileScript files can import each other.
 
 - Source maps and a bundler plugin.
 
