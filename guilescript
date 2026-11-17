@@ -142,24 +142,31 @@ Compile GuileScript files into JavaScript.
 
 ;; Compile FILES, and the GuileScript modules they import, into OUTPUT-DIR.
 (define (compile-project files output-dir load-path source-map?)
-  (let lp ((pending files) (done '()))
-    (match pending
-      (() #t)
-      ((file . rest)
-       (let ((key (canonicalize-path file)))
-         (if (member key done)
-             (lp rest done)
-             (call-with-values
-                 (lambda ()
-                   (call-with-mappings source-map?
-                     (lambda ()
-                       (call-with-compile-errors file
-                         (lambda () (compile-module-file file #:load-path load-path))))))
-               (lambda (js path dependencies mappings)
-                 (let ((output (string-append output-dir "/" path ".js")))
-                   (mkdir-p (dirname output))
-                   (write-output output file js mappings)
-                   (lp (append rest (map cdr dependencies)) (cons key done)))))))))))
+  (for-each
+   (match-lambda
+     ((path js source-map)
+      (let ((output (string-append output-dir "/" path ".js")))
+        (mkdir-p (dirname output))
+        (call-with-output-file output
+          (lambda (p)
+            (display js p)
+            (when source-map
+              (format p "//# sourceMappingURL=~a.map~%" (basename output)))))
+        (when source-map
+          (call-with-output-file (string-append output ".map")
+            (lambda (p) (display source-map p)))))))
+   (call-with-compile-errors (car files)
+     (lambda ()
+       (compile-modules files
+                        #:load-path load-path
+                        #:source-map? source-map?
+                        ;; The map is next to the compiled file.
+                        #:source-map-source
+                        (lambda (file path)
+                          (let ((output (string-append output-dir "/" path ".js")))
+                            (mkdir-p (dirname output))
+                            (relative-path (canonicalize-path (dirname output))
+                                           (canonicalize-path file)))))))))
 
 (define (main args)
   (let* ((options (catch 'misc-error
