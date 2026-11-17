@@ -465,6 +465,9 @@ A few things to keep in mind:
 | `(raise obj)`                      | `throw obj`                                    |
 | `(guard (e clause ...) body ...)`  | `try { body } catch (e) { clause ... }`        |
 
+Optional and keyword arguments without a default value are `undefined` when
+they are not given (in Guile they are `#f`). Both are false in conditions.
+
 `guard` is the R7RS one: its clauses are `cond` clauses and, if none of them
 matches, the exception is raised again.
 
