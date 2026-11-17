@@ -26,6 +26,14 @@
 (console-log (map (lambda (x) (* x x)) xs))
 ;; => [ 1, 4, 9, 16, 25 ]
 
+;; map and for-each with several lists.
+(console-log (map + '(1 2) '(10 20)) (map list '(1 2) '(a b) '(x y)))
+;; => [ 11, 22 ] [ [ 1, 'a', 'x' ], [ 2, 'b', 'y' ] ]
+
+(for-each (lambda (k v) (console-log k v)) '(a b) '(1 2))
+;; => a 1
+;; => b 2
+
 (console-log (filter odd? xs) (remove odd? xs))
 ;; => [ 1, 3, 5 ] [ 2, 4 ]
 

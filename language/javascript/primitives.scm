@@ -621,20 +621,38 @@
         ((f l) (method l js-method (callback f (first til) 1 fresh)))))
     #:dup '(0)))
 
-(define-callback-method! 'map "map")
+;; With several lists, (map f l1 l2 ...) => l1.map((x, i) => f(x, l2[i], ...)).
+(define (lists-callback f f-til ls fresh)
+  (match ls
+    (() (callback f f-til 1 fresh))
+    (_ (let ((x (fresh "x")) (i (fresh "i")))
+         (arrow (list x i)
+                (call-callback f f-til
+                               (cons `(id ,x) (map (lambda (l) `(index ,l (id ,i))) ls))
+                               fresh))))))
 
-(define-primitive! 'for-each 2 2
+;; The function and the other lists are used for each element.
+(define (lists-dup argc)
+  (cons 0 (iota (- argc 2) 2)))
+
+(define-primitive! 'map 2 #f
   (lambda (args til fresh)
     (match args
-      ((f l)
+      ((f l . ls) (method l "map" (lists-callback f (first til) ls fresh)))))
+  #:dup lists-dup)
+
+(define-primitive! 'for-each 2 #f
+  (lambda (args til fresh)
+    (match args
+      ((f l . ls)
        ;; forEach doesn't wait for the promises returned by async functions.
        (match f
          (('async . _)
           (compile-warning (current-location)
                            "the function given to for-each uses js-await, but for-each doesn't wait for it (use a loop, or map and Promise.all)"))
          (_ #t))
-       (method l "forEach" (callback f (first til) 1 fresh)))))
-  #:dup '(0))
+       (method l "forEach" (lists-callback f (first til) ls fresh)))))
+  #:dup lists-dup)
 (define-callback-method! 'filter "filter")
 (define-callback-method! 'any "some")
 (define-callback-method! 'every "every")
