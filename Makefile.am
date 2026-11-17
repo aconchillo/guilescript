@@ -41,6 +41,7 @@ EXAMPLES = \
 TESTS = \
 	tests/basics.gs \
 	tests/control.gs \
+	tests/error-define-module.gs \
 	tests/error-dotted-pair.gs \
 	tests/error-guile-module.gs \
 	tests/error-guile-module-replace.gs \

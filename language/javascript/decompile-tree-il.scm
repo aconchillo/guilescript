@@ -265,6 +265,10 @@
 (define (use-modules-form? x)
   (and (call? x) (named-ref? (call-proc x) 'process-use-modules)))
 
+(define (define-module-form? x)
+  (tree-any (lambda (y) (and (call? y) (named-ref? (call-proc y) 'define-module*)))
+            x))
+
 ;;
 ;; Guile bindings
 ;;
@@ -693,6 +697,8 @@
   (cond
    ((toplevel-define? x) (compile-definition x acc))
    ((use-modules-form? x) #t)
+   ((define-module-form? x)
+    (compile-error "define-module is not supported yet, use use-modules to import Guile modules"))
    ((export-form-names x) #t)
    ((js-import-form? x) (emit! acc (compile-import x)))
    (else (compile-stmt x 'effect acc))))
