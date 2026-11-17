@@ -18,6 +18,11 @@
 (console-log (null? '()) (null? xs) (pair? xs) (list? xs))
 ;; => true false true true
 
+;; Arrays are never ===, so comparing with '() checks for an empty list.
+(define none '())
+(console-log (eq? none '()) (equal? '() xs) (eqv? none '()))
+;; => true false true
+
 (console-log (map (lambda (x) (* x x)) xs))
 ;; => [ 1, 4, 9, 16, 25 ]
 

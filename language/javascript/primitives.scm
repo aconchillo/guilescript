@@ -353,7 +353,19 @@
               (let ((a (fresh "a")) (b (fresh "b")))
                 (arrow (list a b) (binop op `(id ,a) `(id ,b)))))))
 
-(define-comparison! '(= eq? eqv? equal? char=? string=?) "===")
+(define-comparison! '(= char=? string=?) "===")
+
+;; Two arrays are never ===, so (eq? x '()) is (null? x).
+(define-primitive! '(eq? eqv? equal?) 2 2
+  (simple-compiler
+   (lambda (a b)
+     (match (list a b)
+       ((('array) x) (binop "===" (prop x "length") (num 0)))
+       ((x ('array)) (binop "===" (prop x "length") (num 0)))
+       (_ (binop "===" a b)))))
+  #:value (lambda (fresh)
+            (let ((a (fresh "a")) (b (fresh "b")))
+              (arrow (list a b) (binop "===" `(id ,a) `(id ,b))))))
 (define-comparison! '(< char<? string<?) "<")
 (define-comparison! '(> char>? string>?) ">")
 (define-comparison! '(<= char<=? string<=?) "<=")
