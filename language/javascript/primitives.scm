@@ -383,7 +383,18 @@
 (define-js-function! 'abs "Math.abs")
 (define-js-function! 'ceiling "Math.ceil")
 (define-js-function! 'floor "Math.floor")
-(define-js-function! 'round "Math.round")
+;; Like Scheme, round to even: (round 2.5) => 2 (Math.round(2.5) is 3).
+(define (round-to-even x)
+  `(ternary ,(binop "===" (call (js-path "Math.abs") (binop "%" x (num 1))) (num 0.5))
+            ,(binop "*" (num 2) (call (js-path "Math.round") (binop "/" x (num 2))))
+            ,(call (js-path "Math.round") x)))
+
+(define-primitive! 'round 1 1
+  (simple-compiler round-to-even)
+  #:dup 'all
+  #:value (lambda (fresh)
+            (let ((x (fresh "x")))
+              (arrow (list x) (round-to-even `(id ,x))))))
 (define-js-function! 'truncate "Math.trunc")
 (define-js-function! 'max "Math.max")
 (define-js-function! 'min "Math.min")
