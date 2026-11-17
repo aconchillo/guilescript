@@ -378,7 +378,23 @@
          (_ #f))))
 
 (define %special-procedures
-  '(apply error throw raise raise-exception js-import js-global))
+  '(apply error throw raise raise-exception js-import js-global js-await))
+
+;; Does X use js-await, not counting nested functions (which would be async
+;; themselves)? Inlined loops are not functions.
+(define (contains-await? x)
+  (let walk ((x x))
+    (cond
+     ((and (call? x) (named-ref? (call-proc x) 'js-await)) #t)
+     ((lambda? x) #f)
+     ((and (letrec? x) (inline-loop? x))
+      (or (any walk (call-args (letrec-body x)))
+          (walk (lambda-case-body (lambda-body (car (letrec-vals x)))))))
+     (else (any walk (children x))))))
+
+;; A function using js-await is compiled into an async function.
+(define (async-lambda? x)
+  (any contains-await? (children x)))
 
 ;;
 ;; Analysis
@@ -652,7 +668,7 @@
 (define (pure-expr? e)
   (match e
     ((or ('num _) ('str _) ('bool _) ('null) ('undefined) ('id _)
-         ('arrow . _) ('function . _))
+         ('arrow . _) ('function . _) ('async . _))
      #t)
     (_ #f)))
 
@@ -1048,11 +1064,15 @@
 
 (define (compile-function-declaration name x target)
   (let-values (((params body) (compile-lambda x target)))
-    `(fun-decl ,name ,params ,body)))
+    (if (async-lambda? x)
+        `(async-fun-decl ,name ,params ,body)
+        `(fun-decl ,name ,params ,body))))
 
 (define (compile-lambda-expression x)
   (let-values (((params body) (compile-lambda x #f)))
-    `(arrow ,params ,body)))
+    (if (async-lambda? x)
+        `(async (arrow ,params ,body))
+        `(arrow ,params ,body))))
 
 ;; Returns the parameters and the body statements of a function.
 (define (compile-lambda x target)
@@ -1405,6 +1425,10 @@
       (compile-error "use-modules is only allowed at the top level"))
      ((named-ref? proc 'js-global)
       (compile-error "js-global is only allowed at the top level"))
+     ((named-ref? proc 'js-await)
+      (match args
+        ((promise) `(unop "await " ,(compile-value promise acc)))
+        (_ (compile-error "js-await expects one argument"))))
      ((and (lexical-ref? proc)
            (not (hashq-ref (unit-gensym-names (current-unit)) (lexical-ref-gensym proc) #f)))
       (compile-error "internal error: call to an inlined loop outside of a tail position"))

@@ -332,6 +332,22 @@ tail calls (e.g. mutually recursive functions) are regular JavaScript calls.
 |---------------------------------------+-----------------------------|
 | (js-delete! obj 'prop)                | delete obj.prop             |
 |---------------------------------------+-----------------------------|
+| (js-await promise)                    | await promise               |
+|---------------------------------------+-----------------------------|
+
+A function that uses =js-await= is compiled into an =async= function. At the
+top level of an ES module, =js-await= is a top-level =await=.
+
+#+BEGIN_SRC scheme
+(define (fetch-json url)
+  (.json (js-await (fetch url))))
+#+END_SRC
+
+#+BEGIN_SRC javascript
+async function fetchJson(url) {
+  return (await fetch(url)).json();
+}
+#+END_SRC
 
 Methods and properties can also be used as values: =(map .toUpperCase
 strings)= compiles to =strings.map((x) => x.toUpperCase())= and =(map .-length
@@ -381,7 +397,7 @@ also [[*Guile modules][Guile modules]]).
 
 * What's missing?
 
-- =try=/=catch=, =async=/=await=, =this= and classes.
+- =try=/=catch=, =this= and classes.
 
 - A small (tree-shakeable) runtime for things that can't be done inline, like
   a deep =equal?= or =format=.

@@ -41,6 +41,9 @@
     #:select or #:prefix). Other procedures from Guile modules are a
     compilation error.
 
+  - js-await: functions using it are compiled into async functions (and it
+    is a top-level await at the top level of a module).
+
   - Every name must be defined, imported, declared with js-global (e.g.
     (js-global document)) or be a standard JavaScript global, so typos are
     compilation errors. Unsupported Guile procedures (e.g. display) are

@@ -39,8 +39,10 @@ EXAMPLES = \
 	examples/vector-reverse.gs
 
 TESTS = \
+	tests/async.gs \
 	tests/basics.gs \
 	tests/control.gs \
+	tests/error-await.gs \
 	tests/error-define-module.gs \
 	tests/error-dotted-pair.gs \
 	tests/error-guile-module.gs \

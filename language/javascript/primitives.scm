@@ -141,6 +141,7 @@
 ;; A function expression taking exactly N plain parameters.
 (define (function-with-arity? e n)
   (match e
+    (('async f) (function-with-arity? f n))
     (('arrow params _)
      (and (= n (length params))
           (every (match-lambda (('param _) #t) (_ #f)) params)))
@@ -257,6 +258,9 @@
     (('arrow (p1 p2) body)
      (=> next)
      (if (function-with-arity? f 2) `(arrow (,p2 ,p1) ,body) (next)))
+    (('async ('arrow (p1 p2) body))
+     (=> next)
+     (if (function-with-arity? f 2) `(async (arrow (,p2 ,p1) ,body)) (next)))
     (_ (let ((a (fresh "acc")) (x (fresh "x")))
          (arrow (list a x) (call-callback f f-til (list `(id ,x) `(id ,a)) fresh))))))
 

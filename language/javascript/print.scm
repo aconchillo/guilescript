@@ -31,7 +31,7 @@
 ;;   (new F ARG ...)
 ;;   (dot E NAME) (index E E)
 ;;   (binop OP A B) (unop OP A) (ternary T A B) (assign TARGET E)
-;;   (function NAME PARAMS STMTS) (arrow PARAMS STMTS)
+;;   (function NAME PARAMS STMTS) (arrow PARAMS STMTS) (async ARROW)
 ;;
 ;; Parameters:
 ;;
@@ -41,6 +41,7 @@
 ;; Statements:
 ;;
 ;;   (expr-stmt E) (decl KIND NAME E) (fun-decl NAME PARAMS STMTS)
+;;   (async-fun-decl NAME PARAMS STMTS)
 ;;   (return E) (if T STMTS STMTS) (while LABEL STMTS) (break LABEL)
 ;;   (continue LABEL) (throw E) (block STMTS) (export STMT)
 ;;   (export-names NAMES) (import FROM DEFAULT NAMESPACE NAMES)
@@ -123,6 +124,7 @@
     (('num n) (if (or (negative? n) (eqv? n -0.0)) 15 18))
     (('assign . _) 2)
     (('arrow . _) 2)
+    (('async . _) 2)
     (('ternary . _) 3)
     (('binop op . _) (binop-precedence op))
     (('unop . _) 15)
@@ -240,6 +242,8 @@
                     (parameters params indent) " " (block body indent)))
     (('arrow params body)
      (string-append (parameters params indent) " => " (arrow-body body indent)))
+    (('async f)
+     (string-append "async " (expr* f indent)))
     (_ (error "GuileScript: unknown JavaScript expression" e))))
 
 (define (arrow-body body indent)
@@ -310,6 +314,9 @@
                       ";\n"))
       (('fun-decl name params body)
        (string-append pad "function " name (parameters params indent) " "
+                      (block body indent) "\n"))
+      (('async-fun-decl name params body)
+       (string-append pad "async function " name (parameters params indent) " "
                       (block body indent) "\n"))
       (('return value)
        (string-append pad "return" (if value (string-append " " (expr value 0 indent)) "")
