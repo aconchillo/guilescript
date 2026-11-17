@@ -1,6 +1,6 @@
 {
   "name": "vite-plugin-guilescript",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Vite plugin for GuileScript (.gs) files",
   "type": "module",
   "main": "index.js",
@@ -11,11 +11,21 @@
   ],
   "keywords": [
     "vite-plugin",
+    "vite",
     "guilescript",
     "guile",
-    "scheme"
+    "scheme",
+    "lisp"
   ],
   "license": "GPL-3.0-or-later",
+  "author": "Aleix Conchillo Flaqué <aconchillo@gmail.com>",
+  "homepage": "https://github.com/aconchillo/guilescript/tree/master/vite-plugin-guilescript#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aconchillo/guilescript.git",
+    "directory": "vite-plugin-guilescript"
+  },
+  "bugs": "https://github.com/aconchillo/guilescript/issues",
   "peerDependencies": {
     "vite": ">=5"
   },

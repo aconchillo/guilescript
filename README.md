@@ -247,12 +247,14 @@ export default defineConfig({
 
 Compilation errors are shown with their location in Vite's error overlay, and
 source maps map the code back to the `.gs` files (enable `build.sourcemap` to
-also have them in production builds). The plugin is not published on npm
-yet, so install it from this repository:
+also have them in production builds). Install it with:
 
 ```console
-$ npm install --save-dev /path/to/guilescript/vite-plugin-guilescript
+$ npm install --save-dev vite-plugin-guilescript
 ```
+
+It runs the `guilescript` command, so GuileScript must be installed (or see
+[Hacking](#hacking) to use it without installing it).
 
 See `examples/vite` for a complete example. (The plugin compiles each file
 with `guilescript --source-imports`, which imports GuileScript modules by the

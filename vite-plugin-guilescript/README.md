@@ -3,7 +3,11 @@
 A [Vite](https://vite.dev/) plugin to use [GuileScript](https://github.com/aconchillo/guilescript)
 (`.gs`) files in Vite projects.
 
-It needs the `guilescript` command (GuileScript 0.3.0 or newer).
+It needs the `guilescript` command (GuileScript 1.0.0 or newer).
+
+```console
+$ npm install --save-dev vite-plugin-guilescript
+```
 
 ```js
 // vite.config.js
