@@ -142,6 +142,11 @@
 ;; Names
 ;;
 
+;; The JavaScript name another GuileScript module exports NAME with.
+(define (exported-js-name name)
+  (let ((s (symbol->string name)))
+    (if (js-protected-global? s) s (scheme->js-name name))))
+
 (define (toplevel-js-name name)
   (let ((s (symbol->string name)))
     (cond
@@ -554,8 +559,16 @@
 ;; Analysis
 ;;
 
+;; The names imported by js-import, including the local names of
+;; #:rename '((exported . local) ...).
 (define (import-form-names x)
-  (filter-map (lambda (arg) (and (toplevel-ref? arg) (toplevel-ref-name arg)))
+  (append-map (lambda (arg)
+                (cond
+                 ((toplevel-ref? arg) (list (toplevel-ref-name arg)))
+                 ((and (const? arg) (list? (const-exp arg)))
+                  (filter-map (lambda (entry) (and (pair? entry) (cdr entry)))
+                              (const-exp arg)))
+                 (else '())))
               (call-args x)))
 
 (define (analyze! x)
@@ -987,6 +1000,23 @@
           (when (and namespace (pair? names))
             (compile-error "js-import can't combine #:as with named imports"))
           `(import ,(const-exp from) ,default ,namespace ,(reverse names)))
+         ;; #:rename '((exported . local) ...): import { exported as local }
+         (((? keyword-const? kw) (? const? renames) . rest)
+          (=> next)
+          (if (eq? (const-exp kw) #:rename)
+              (lp rest default namespace
+                  (append (reverse
+                           (map (match-lambda
+                                  (((? symbol? exported) . (? symbol? local))
+                                   (let ((exported (exported-js-name exported))
+                                         (local (toplevel-js-name local)))
+                                     (if (string=? exported local)
+                                         local
+                                         (string-append exported " as " local))))
+                                  (other (compile-error "invalid js-import #:rename entry ~s" other)))
+                                (const-exp renames)))
+                          names))
+              (next)))
          (((? keyword-const? kw) (? toplevel-ref? ref) . rest)
           (let ((js (toplevel-js-name (toplevel-ref-name ref))))
             (match (const-exp kw)

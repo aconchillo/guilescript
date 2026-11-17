@@ -24,3 +24,9 @@
 
 (console-log (square 3) (cube 2))
 ;; => 9 8
+
+;; Imported names can be renamed.
+(js-import "node:path" #:rename '((join . path-join) (sep . path-separator)))
+
+(console-log (path-join "x" "y") path-separator)
+;; => x/y /

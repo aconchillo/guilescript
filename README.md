@@ -108,6 +108,7 @@ with any bundler (esbuild, Vite, webpack...).
 | `(js-import "lodash" #:default _)` | `import _ from "lodash";` |
 | `(js-import "node:path" #:as path)` | `import * as path from "node:path";` |
 | `(js-import "./style.css")` | `import "./style.css";` |
+| `(js-import "node:path" #:rename '((join . path-join)))` | `import { join as pathJoin } from "node:path";` |
 | `(define-public (f x) ...)` | `export function f(x) { ... }` |
 | `(export f g)` | adds `export` to the definitions of `f` and `g` |
 
