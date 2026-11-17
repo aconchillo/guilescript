@@ -3,7 +3,7 @@
 ;;
 ;; Binary search using vectors.
 ;;
-(define (binary_search v x)
+(define (binary-search v x)
   (let loop ((l 0)
              (r (- (vector-length v) 1)))
     (cond
@@ -14,3 +14,8 @@
          ((< (vector-ref v m) x) (loop (+ m 1) r))
          (else (loop l (- m 1))))))
      (else -1))))
+
+(console-log (binary-search #(1 3 5 7 9 11) 7))
+(console-log (binary-search #(1 3 5 7 9 11) 4))
+;; => 3
+;; => -1

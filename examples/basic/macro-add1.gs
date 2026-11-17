@@ -12,3 +12,4 @@
 (define value 0)
 
 (console-log (add1 value))
+;; => 1

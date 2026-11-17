@@ -29,15 +29,15 @@ dist_bin_SCRIPTS = scripts/guilescript
 ACLOCAL_AMFLAGS = -I build-aux
 
 EXAMPLES = \
-	examples/basic-objects.gs \
-	examples/binary-search.gs \
-	examples/date.gs \
-	examples/fibonacci.gs \
-	examples/halve.gs \
-	examples/macro-add1.gs \
-	examples/macro-when.gs \
-	examples/timer.gs \
-	examples/vector-reverse.gs
+	examples/basic/basic-objects.gs \
+	examples/basic/binary-search.gs \
+	examples/basic/date.gs \
+	examples/basic/fibonacci.gs \
+	examples/basic/halve.gs \
+	examples/basic/macro-add1.gs \
+	examples/basic/macro-when.gs \
+	examples/basic/timer.gs \
+	examples/basic/vector-reverse.gs
 
 TESTS = \
 	tests/async.gs \
@@ -98,7 +98,7 @@ EXTRA_DIST = \
 	vite-plugin-guilescript/README.md \
 	vite-plugin-guilescript/index.js \
 	vite-plugin-guilescript/package.json \
-	examples/fibonacci-server.scm \
+	examples/basic/fibonacci-server.scm \
 	examples/task-manager/README.md \
 	examples/task-manager/react/index.html \
 	examples/task-manager/react/package-lock.json \

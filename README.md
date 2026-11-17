@@ -76,8 +76,10 @@ $ brew install aconchillo/guile/guilescript
 Then compile one of the examples:
 
 ```console
-$ guilescript examples/fibonacci.gs
-$ guilescript -o fibonacci.js examples/fibonacci.gs
+$ guilescript examples/basic/fibonacci.gs
+$ guilescript -o fibonacci.js examples/basic/fibonacci.gs
+$ node fibonacci.js
+89
 ```
 
 ```scheme
@@ -85,12 +87,16 @@ $ guilescript -o fibonacci.js examples/fibonacci.gs
   (if (<= n 1)
       1
       (+ (fib (- n 2)) (fib (- n 1)))))
+
+(console-log (fib 10))
 ```
 
 ```javascript
 function fib(n) {
   return n <= 1 ? 1 : fib(n - 2) + fib(n - 1);
 }
+
+console.log(fib(10));
 ```
 
 GuileScript can also be used from a Guile program, e.g. a web server:
@@ -100,9 +106,8 @@ compile GuileScript files into JavaScript (see
 
 ### Examples
 
-- `examples/*.gs`: small programs.
-
-- `examples/fibonacci-server.scm`: a Guile web server with GuileScript code.
+- `examples/basic`: small programs, and a Guile web server with GuileScript
+  code (`fibonacci-server.scm`).
 
 - `examples/vite`: a minimal Vite project.
 

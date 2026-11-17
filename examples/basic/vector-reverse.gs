@@ -1,9 +1,9 @@
 ;; -*- mode: scheme; coding: utf-8; -*-
 
 ;;
-;; Vector reverse.
+;; Reverse a vector in place.
 ;;
-(define (vector_reverse v)
+(define (reverse-vector! v)
   (let loop ((l 0)
              (r (- (vector-length v) 1)))
     (cond
@@ -13,3 +13,6 @@
         (vector-set! v r c)
         (loop (+ l 1) (- r 1))))
      (else v))))
+
+(console-log (.stringify JSON (reverse-vector! (vector 1 2 3 4 5))))
+;; => [5,4,3,2,1]

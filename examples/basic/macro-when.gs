@@ -12,3 +12,5 @@
 (gs-when #t
   (console-log "hey ho")
   (console-log "let's go"))
+;; => hey ho
+;; => let's go

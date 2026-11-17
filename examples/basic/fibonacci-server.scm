@@ -8,11 +8,14 @@
 ;;
 ;; If you are building from source, run with:
 ;;
-;;    ./env guile examples/fibonacci-server.scm
+;;    ./env guile examples/basic/fibonacci-server.scm
 ;;
 ;; If GuileScript is already installed, run with:
 ;;
-;;    guile examples/fibonacci-server.scm
+;;    guile examples/basic/fibonacci-server.scm
+;;
+;; (examples/task-manager is a complete application, with the GuileScript
+;; code in separate files.)
 ;;
 
 (use-modules ((language guilescript compile) #:prefix gs:)
@@ -36,10 +39,11 @@
            1
            (+ (fib (- n 2)) (fib (- n 1)))))
 
-     (define (computeFibonacci)
-       (let* ((elem (js-invoke document 'getElementById "number"))
-              (n (js-ref elem 'value)))
-         (alert (+ "Fibonacci of " n " is " (fib n)))))))
+     ;; computeFibonacci() in JavaScript.
+     (define (compute-fibonacci)
+       (let ((n (string->number (.-value (.get-element-by-id document "number")))))
+         (alert (string-append "Fibonacci of " (number->string n)
+                               " is " (number->string (fib n))))))))
 
 (define js-script
   (receive (js _)
