@@ -101,7 +101,6 @@ EXTRA_DIST = \
 	examples/fibonacci-server.scm \
 	examples/task-manager/README.md \
 	examples/task-manager/react/index.html \
-	examples/task-manager/react/macros/react/html.scm \
 	examples/task-manager/react/package-lock.json \
 	examples/task-manager/react/package.json \
 	examples/task-manager/react/src/app.gs \

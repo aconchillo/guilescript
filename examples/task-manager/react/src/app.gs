@@ -5,12 +5,12 @@
 ;;
 
 (define-module (app)
-  #:use-module (react html)
+  #:use-module (guilescript html)
   #:use-module (tasks api)
   #:use-module (tasks validation)
   #:export (<app>))
 
-(js-import "react" create-element use-state use-effect <fragment>)
+(js-import "react" #:rename '((createElement . h)) use-state use-effect <fragment>)
 
 ;; The form to add tasks. ON-ADD adds a task with the given title (and
 ;; returns a promise).

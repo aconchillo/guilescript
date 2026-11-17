@@ -2,9 +2,8 @@ import { defineConfig } from "vite";
 import guilescript from "vite-plugin-guilescript";
 
 export default defineConfig({
-  // The shared GuileScript modules are in ../shared and the html macro (a
-  // Guile module) in macros.
-  plugins: [guilescript({ loadPath: ["../shared", "macros"] })],
+  // The shared GuileScript modules are in ../shared.
+  plugins: [guilescript({ loadPath: ["../shared"] })],
   server: {
     // The task API is served by ../server.scm.
     proxy: { "/api": "http://localhost:8080" },

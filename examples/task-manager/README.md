@@ -51,14 +51,23 @@ Invalid requests get a 400 response with the problems, e.g.
 ## The React version
 
 `react/` is the same task manager with React components, written in
-GuileScript and built with Vite. Instead of JSX, the components use an `html`
-macro (`react/macros/react/html.scm`, a Guile module):
+GuileScript and built with Vite. Instead of JSX, the components use the
+`html` macro of `(guilescript html)`:
 
 ```scheme
 (html (li #:class-name ,(if (.-done task) "task done" "task")
         (input #:type "checkbox" #:checked ,(.-done task))
         (<task-title> #:task task)))
 ```
+
+`html` calls `h`, which is React's `createElement` here:
+
+```scheme
+(js-import "react" #:rename '((createElement . h)) use-state use-effect)
+```
+
+(The vanilla version uses the same macro, with an `h` that creates DOM
+elements, in `vanilla/dom.gs`.)
 
 Hooks return arrays, which are multiple values in GuileScript:
 

@@ -5,6 +5,7 @@
 ;;
 
 (define-module (app)
+  #:use-module (guilescript html)
   #:use-module (dom)
   #:use-module (tasks api)
   #:use-module (tasks validation))
@@ -36,17 +37,16 @@
 ;;
 
 (define title-input
-  (h "input" (js-obj #:placeholder "What needs to be done?"
-                     #:max-length max-title-length)))
+  (html (input #:placeholder "What needs to be done?"
+               #:max-length max-title-length)))
 
-(define errors-list (h "ul" (js-obj #:class-name "errors")))
-(define task-list (h "ul" (js-obj #:class-name "tasks")))
-(define counter (h "span" (js-obj #:class-name "counter")))
-(define filter-buttons (h "div" (js-obj #:class-name "filters")))
+(define errors-list (html (ul #:class-name "errors")))
+(define task-list (html (ul #:class-name "tasks")))
+(define counter (html (span #:class-name "counter")))
+(define filter-buttons (html (div #:class-name "filters")))
 
 (define (show-errors! errors)
-  (set-children! errors-list
-                     (map (lambda (error) (h "li" (js-obj) error)) errors)))
+  (set-children! errors-list (map (lambda (error) (html (li error))) errors)))
 
 ;;
 ;; Actions
@@ -82,7 +82,7 @@
 
 ;; Replace the title of a task by an input to edit it.
 (define (edit-title! task label)
-  (let ((input (h "input" (js-obj #:class-name "edit" #:value (.-title task))))
+  (let ((input (html (input #:class-name "edit" #:value ,(.-title task))))
         (done? #f))
     (define (finish! save?)
       (unless done?
@@ -111,28 +111,29 @@
 ;; Rendering
 ;;
 
+;; Properties are DOM properties (e.g. onclick, not React's onClick).
 (define (task-item task)
-  (letrec ((label (h "span" (js-obj #:class-name "title"
-                                    #:title "Double-click to edit"
-                                    #:ondblclick (lambda (event) (edit-title! task label)))
-                     (.-title task))))
-    (h "li" (js-obj #:class-name (if (.-done task) "task done" "task"))
-       (h "input" (js-obj #:type "checkbox"
-                          #:checked (.-done task)
-                          #:onchange (lambda (event)
-                                       (toggle-task! task (.-checked (.-target event))))))
-       label
-       (h "button" (js-obj #:class-name "delete"
-                           #:title "Delete"
-                           #:onclick (lambda (event) (remove-task! task)))
-          "×"))))
+  (letrec ((label (html (span #:class-name "title"
+                              #:title "Double-click to edit"
+                              #:ondblclick ,(lambda (event) (edit-title! task label))
+                              ,(.-title task)))))
+    (html (li #:class-name ,(if (.-done task) "task done" "task")
+              (input #:type "checkbox"
+                     #:checked ,(.-done task)
+                     #:onchange ,(lambda (event)
+                                   (toggle-task! task (.-checked (.-target event)))))
+              label
+              (button #:class-name "delete"
+                      #:title "Delete"
+                      #:onclick ,(lambda (event) (remove-task! task))
+                      "×")))))
 
 (define (filter-button name label)
-  (h "button" (js-obj #:class-name (if (eq? name current-filter) "selected" "")
-                      #:onclick (lambda (event)
-                                  (set! current-filter name)
-                                  (render!)))
-     label))
+  (html (button #:class-name ,(if (eq? name current-filter) "selected" "")
+                #:onclick ,(lambda (event)
+                             (set! current-filter name)
+                             (render!))
+                label)))
 
 (define (render!)
   (set-children! task-list (map task-item (filter visible? tasks)))
@@ -153,24 +154,23 @@
 (define (show-page!)
   (set-children!
    app
-   (h "main" (js-obj #:class-name "app")
-      (h "h1" (js-obj) "Tasks")
-      (h "form" (js-obj #:onsubmit add-task!)
-         title-input
-         (h "button" (js-obj #:type "submit") "Add"))
-      errors-list
-      (h "input" (js-obj #:class-name "search"
-                         #:type "search"
-                         #:placeholder "Search"
-                         #:oninput (lambda (event)
-                                     (set! search (.-value (.-target event)))
-                                     (render!))))
-      task-list
-      (h "footer" (js-obj)
-         counter
-         filter-buttons
-         (h "button" (js-obj #:onclick (lambda (event) (clear-done!)))
-            "Clear done")))))
+   (html (main #:class-name "app"
+               (h1 "Tasks")
+               (form #:onsubmit add-task!
+                     title-input
+                     (button #:type "submit" "Add"))
+               errors-list
+               (input #:class-name "search"
+                      #:type "search"
+                      #:placeholder "Search"
+                      #:oninput ,(lambda (event)
+                                   (set! search (.-value (.-target event)))
+                                   (render!)))
+               task-list
+               (footer counter
+                       filter-buttons
+                       (button #:onclick ,(lambda (event) (clear-done!))
+                               "Clear done"))))))
 
 (set! (.-oninput title-input)
       (lambda (event)
@@ -179,13 +179,13 @@
 
 ;; The page is shown once the tasks are loaded (so they can't be changed
 ;; before).
-(set-children! app (h "main" (js-obj #:class-name "app") (h "p" (js-obj) "Loading…")))
+(set-children! app (html (main #:class-name "app" (p "Loading…"))))
 
 (guard (e ((error-object? e)
-           (set-children! app (h "main" (js-obj #:class-name "app")
-                                 (h "p" (js-obj #:class-name "errors")
-                                    (string-append "Can't load the tasks: "
-                                                   (error-object-message e)))))))
+           (set-children! app (html (main #:class-name "app"
+                                          (p #:class-name "errors"
+                                             ,(string-append "Can't load the tasks: "
+                                                             (error-object-message e))))))))
   (set! tasks (js-await (fetch-tasks)))
   (show-page!)
   (render!))
