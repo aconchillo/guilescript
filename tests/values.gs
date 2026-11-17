@@ -83,3 +83,12 @@
 (console-log (call-with-values (lambda () (car one)) (lambda args args))
              (call-with-values (lambda () (values '(1 2 3))) (lambda (a . rest) (list a rest))))
 ;; => [ 5 ] [ [ 1, 2, 3 ], [] ]
+
+;; define-values destructures the values: const [a, ...rest] = ...
+(define (head-and-tail xs)
+  (define-values (head . tail) (apply values xs))
+  (list head tail))
+(define-values (counter step) (values 0 5))
+(set! counter (+ counter step))
+(console-log (head-and-tail '(1 2 3)) counter)
+;; => [ 1, [ 2, 3 ] ] 5

@@ -1017,7 +1017,7 @@
     (reserve-helper-names! x)
     (let ((acc (new-acc))
           (unit (current-unit)))
-      (for-each (cut compile-toplevel <> acc) (toplevel-forms x))
+      (compile-toplevel-forms (toplevel-forms x) acc)
       (let ((reexports (filter (lambda (name)
                                  (not (hashq-ref (unit-defined unit) name #f)))
                                (delete-duplicates (unit-exports unit)))))
@@ -1078,11 +1078,60 @@
                 (lambda (y found) found)
                 #f x))
 
-(define (compile-toplevel x acc)
+(define (compile-toplevel-forms forms acc)
+  (match forms
+    (() #t)
+    ((form . forms)
+     (match (toplevel-values form forms)
+       ((n . rest?)
+        ;; (define-values (a b) expr) => const [a, b] = expr
+        (let ((k (if rest? (+ n 1) n)))
+          (compile-toplevel form acc
+                            (lambda (form acc)
+                              (compile-toplevel-values! form (list-head forms k) n rest? acc)))
+          (compile-toplevel-forms (drop forms k) acc)))
+       (#f
+        (compile-toplevel form acc)
+        (compile-toplevel-forms forms acc))))))
+
+;; If FORM is the temporary variable of a top-level define-values and FORMS
+;; start with its variables (see destructured-values), returns (N . REST?).
+(define (toplevel-values form forms)
+  (and (toplevel-define? form)
+       (generated-name? (toplevel-define-name form))
+       (let* ((name (toplevel-define-name form))
+              (defs (take-while toplevel-define? forms))
+              (result (destructured-values (map toplevel-define-exp defs)
+                                           (lambda (x)
+                                             (and (toplevel-ref? x)
+                                                  (eq? (toplevel-ref-name x) name))))))
+         (match result
+           ((n . rest?)
+            (let* ((unit (current-unit))
+                   (names (map toplevel-define-name (list-head defs (if rest? (+ n 1) n))))
+                   (exported (map (cut memq <> (unit-exports unit)) names)))
+              ;; All the variables are exported, or none.
+              (and (or (every identity exported) (not (any identity exported)))
+                   (not (any (cut hashq-ref (unit-emitted unit) <> #f) names))
+                   result)))
+           (#f #f)))))
+
+(define (compile-toplevel-values! tmp defs n rest? acc)
+  (let* ((unit (current-unit))
+         (names (map toplevel-define-name defs))
+         (js (map toplevel-js-name names))
+         (stmt `(decl-array ,(if (any toplevel-mutable? names) "let" "const")
+                            ,(list-head js n)
+                            ,(and rest? (list-ref js n))
+                            ,(compile-value (toplevel-define-exp tmp) acc))))
+    (for-each (cut hashq-set! (unit-emitted unit) <> #t) names)
+    (emit! acc (if (memq (car names) (unit-exports unit)) `(export ,stmt) stmt))))
+
+(define* (compile-toplevel x acc #:optional (compile compile-toplevel*))
   (set-unit-form-scope! (current-unit) (make-hash-table))
   (note-location! (first-user-location x))
   (with-fluids ((%statement-location (first-user-location x)))
-    (compile-toplevel* x acc)))
+    (compile x acc)))
 
 (define (compile-toplevel* x acc)
   (cond
@@ -1191,21 +1240,74 @@
             (let-gensyms x) (let-names x) (let-vals x)))
 
 (define (compile-letrec-bindings! x acc)
-  (let* ((gensyms (letrec-gensyms x))
-         (names (map-in-order bind! gensyms (letrec-names x))))
-    (for-each (lambda (gensym name val)
-                (cond
-                 ((and (lambda? val) (not (lexical-assigned? gensym)))
-                  (emit! acc (compile-function-declaration name val `(lexical . ,gensym))))
-                 ((and (eq? (record-call-kind val) 'type) (not (lexical-assigned? gensym)))
-                  (emit! acc (compile-record-class name val)))
-                 ((and (record-call-kind val) (not (lexical-assigned? gensym)))
-                  (when (value-ref? gensym)
-                    (emit! acc (compile-record-function name val acc))))
-                 ((unused? gensym) (compile-stmt val 'effect acc))
-                 (else
-                  (compile-declaration! (binding-kind gensym) name val acc))))
-              gensyms names (letrec-vals x))))
+  (define (compile-binding! gensym name val)
+    (cond
+     ((and (lambda? val) (not (lexical-assigned? gensym)))
+      (emit! acc (compile-function-declaration name val `(lexical . ,gensym))))
+     ((and (eq? (record-call-kind val) 'type) (not (lexical-assigned? gensym)))
+      (emit! acc (compile-record-class name val)))
+     ((and (record-call-kind val) (not (lexical-assigned? gensym)))
+      (when (value-ref? gensym)
+        (emit! acc (compile-record-function name val acc))))
+     ((unused? gensym) (compile-stmt val 'effect acc))
+     (else
+      (compile-declaration! (binding-kind gensym) name val acc))))
+  (let lp ((gensyms (letrec-gensyms x))
+           (names (map-in-order bind! (letrec-gensyms x) (letrec-names x)))
+           (vals (letrec-vals x)))
+    (match (list gensyms names vals)
+      ((() () ()) #t)
+      (((gensym . gensyms) (name . names) (val . vals))
+       (match (and (not (lexical-assigned? gensym))
+                   (destructured-values vals (cut lexical-ref-to? <> gensym)))
+         ((n . rest?)
+          (=> next)
+          ;; (define-values (a b) expr) => const [a, b] = expr
+          (let ((k (if rest? (+ n 1) n)))
+            (unless (= k (hashq-ref (unit-ref-counts (current-unit)) gensym 0))
+              (next))
+            (emit! acc `(decl-array ,(if (any lexical-assigned? (list-head gensyms k)) "let" "const")
+                                    ,(list-head names n)
+                                    ,(and rest? (list-ref names n))
+                                    ,(compile-value val acc)))
+            (lp (drop gensyms k) (drop names k) (drop vals k))))
+         (_
+          (compile-binding! gensym name val)
+          (lp gensyms names vals)))))))
+
+;; (define-values (a b . c) expr) defines a temporary variable with the
+;; values (an array) and then each variable:
+;;
+;;   (define a (%js-values-ref tmp '(a b) 'a))
+;;   (define b (%js-values-ref tmp '(a b) 'b))
+;;   (define c (%js-values-rest tmp '(a b)))
+;;
+;; If VALS, the values of the definitions after the temporary, start like
+;; that (TMP-REF? tells if an expression is a reference to the temporary),
+;; returns (N . REST?), the number of variables and whether there is a rest
+;; variable after them.
+(define (destructured-values vals tmp-ref?)
+  (define (values-ref x)
+    (and (call? x)
+         (named-ref? (call-proc x) '%js-values-ref)
+         (match (call-args x)
+           (((? tmp-ref?) (? const? vars) (? const? var))
+            (cons (const-exp vars) (const-exp var)))
+           (_ #f))))
+  (define (values-rest? x vars)
+    (and (call? x)
+         (named-ref? (call-proc x) '%js-values-rest)
+         (match (call-args x)
+           (((? tmp-ref?) (? const? rest-vars)) (equal? (const-exp rest-vars) vars))
+           (_ #f))))
+  (match (and (pair? vals) (values-ref (car vals)))
+    (((? list? vars) . _)
+     (let ((n (length vars)))
+       (and (<= n (length vals))
+            (every (lambda (val var) (equal? (values-ref val) (cons vars var)))
+                   (list-head vals n) vars)
+            (cons n (and (< n (length vals)) (values-rest? (list-ref vals n) vars))))))
+    (_ #f)))
 
 ;;
 ;; Records
