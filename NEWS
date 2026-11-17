@@ -42,6 +42,10 @@
     export. New -d option to compile a file and all the GuileScript modules
     it imports, and -L to add directories where modules are searched.
 
+  - Source maps: new --source-map option to generate source maps
+    (FILE.js.map next to the compiled files, or inline when writing to
+    stdout), so stack traces and developer tools point to the .gs files.
+
   - vite-plugin-guilescript: a Vite plugin to use .gs files in Vite
     projects (see examples/vite). New --source-imports option to import
     GuileScript modules by the path of their .gs file, for bundler plugins.

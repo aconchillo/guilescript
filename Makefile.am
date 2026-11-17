@@ -70,6 +70,7 @@ TESTS = \
 	tests/prelude.gs \
 	tests/project.gs \
 	tests/records.gs \
+	tests/source-map.gs \
 	tests/strings.gs \
 	tests/values.gs \
 	vite-plugin-guilescript/test.mjs \

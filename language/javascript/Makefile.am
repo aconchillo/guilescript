@@ -26,6 +26,7 @@ SOURCES = \
 	errors.scm \
 	names.scm \
 	print.scm \
+	source-map.scm \
 	primitives.scm \
 	decompile-tree-il.scm \
 	spec.scm

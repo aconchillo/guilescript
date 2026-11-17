@@ -59,6 +59,7 @@
   #:use-module (srfi srfi-26)
   #:use-module (language javascript names)
   #:export (print-js
+            print-js-with-locations
             print-js-expression
             js-string-literal))
 
@@ -85,7 +86,9 @@
            ((#\tab) (display "\\t" port))
            (else
             (let ((n (char->integer c)))
-              (if (or (< n #x20) (= n #x7f) (= n #x2028) (= n #x2029))
+              (if (or (< n #x20) (= n #x7f) (= n #x2028) (= n #x2029)
+                      ;; Used as markers by print-js-with-locations.
+                      (= n #xe000) (= n #xe001))
                   (format port "\\u~4,'0x" n)
                   (write-char c port))))))
        s)
@@ -305,7 +308,30 @@
         (string-append "(" s ")")
         s)))
 
+;; The source locations of statements (see print-js-with-locations).
+(define current-locations (make-parameter #f))
+(define current-markers (make-parameter #f))
+
+(define marker-start (integer->char #xe000))
+(define marker-end (integer->char #xe001))
+
+;; A marker for the source location SRC, which is removed after printing.
+(define (marker src)
+  (match (current-markers)
+    ((and markers (count . table))
+     (hashv-set! table count src)
+     (set-car! markers (+ count 1))
+     (string-append (string marker-start) (number->string count) (string marker-end)))))
+
 (define (statement s indent)
+  (let ((text (statement* s indent))
+        (src (and (current-locations) (hashq-ref (current-locations) s #f))))
+    (if src
+        (let ((pad (indent-string indent)))
+          (string-append pad (marker src) (substring text (string-length pad))))
+        text)))
+
+(define (statement* s indent)
   (let ((pad (indent-string indent)))
     (match s
       (('expr-stmt e)
@@ -403,6 +429,42 @@
               (cons s (if (and prev (or (multi-line? prev) (multi-line? s)))
                           (cons "\n" acc)
                           acc)))))))
+
+;; Print STMTS like print-js and return the printed code and the source map
+;; mappings ((GENERATED-LINE GENERATED-COLUMN SOURCE-LINE SOURCE-COLUMN) ...)
+;; of the statements with a source location in LOCATIONS (a hash table from
+;; statements to Tree-IL source locations).
+(define (print-js-with-locations stmts locations)
+  (let ((table (make-hash-table)))
+    (parameterize ((current-locations locations)
+                   (current-markers (cons 0 table)))
+      (extract-markers (print-js stmts) table))))
+
+;; Remove the markers from TEXT and return the text and the mappings.
+;; Columns are in UTF-16 code units, like in JavaScript.
+(define (extract-markers text table)
+  (let ((out (open-output-string))
+        (n (string-length text)))
+    (let lp ((i 0) (line 0) (column 0) (mappings '()))
+      (if (= i n)
+          (values (get-output-string out) (reverse mappings))
+          (let ((c (string-ref text i)))
+            (cond
+             ((char=? c marker-start)
+              (let* ((end (string-index text marker-end i))
+                     (src (hashv-ref table (string->number (substring text (+ i 1) end))))
+                     (source-line (assq-ref src 'line))
+                     (source-column (assq-ref src 'column)))
+                (lp (+ end 1) line column
+                    (if (and source-line source-column)
+                        (cons (list line column source-line source-column) mappings)
+                        mappings))))
+             ((char=? c #\newline)
+              (write-char c out)
+              (lp (+ i 1) (+ line 1) 0 mappings))
+             (else
+              (write-char c out)
+              (lp (+ i 1) line (+ column (if (> (char->integer c) #xffff) 2 1)) mappings))))))))
 
 (define (print-js-expression e)
   (expr e 0 0))

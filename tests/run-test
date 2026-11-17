@@ -29,8 +29,9 @@
 #
 #  - otherwise the JavaScript code must have valid syntax.
 #
-# FILE.gs and the GuileScript modules it imports are compiled (with -d) into
-# ES modules. Exits with 77 (skip) if Node.js is not available.
+# FILE.gs and the GuileScript modules it imports are compiled (with -d and
+# --source-map) into ES modules, which are run with source maps enabled.
+# Exits with 77 (skip) if Node.js is not available.
 
 set -u
 
@@ -53,7 +54,7 @@ mkdir "$tmp/out"
 echo '{ "type": "module" }' > "$tmp/out/package.json"
 js="$tmp/out/$(basename "$file" .gs).js"
 
-"$srcdir/guilescript" -d "$tmp/out" "$file" 2> "$tmp/stderr"
+"$srcdir/guilescript" -d "$tmp/out" --source-map "$file" 2> "$tmp/stderr"
 status=$?
 cat "$tmp/stderr"
 
@@ -78,7 +79,7 @@ fi
 
 if grep -q '^;; =>' "$file"; then
   sed -n 's/^;; => \{0,1\}//p' "$file" > "$tmp/expected"
-  (cd "$tmp/out" && "$NODE" "$js") > "$tmp/actual" 2>&1
+  (cd "$tmp/out" && "$NODE" --enable-source-maps "$js") > "$tmp/actual" 2>&1
   if ! diff -u "$tmp/expected" "$tmp/actual"; then
     echo "FAIL: unexpected output. Generated code:"
     cat -n "$js"

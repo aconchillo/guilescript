@@ -52,6 +52,7 @@
   #:use-module (language javascript names)
   #:use-module (language javascript primitives)
   #:use-module (language javascript print)
+  #:use-module (language javascript source-map)
   #:use-module (srfi srfi-1)
   #:use-module (srfi srfi-9)
   #:use-module (srfi srfi-11)
@@ -60,7 +61,14 @@
             compile-program))
 
 (define (decompile-tree-il x env opts)
-  (values (print-js (compile-program x (and (module? env) env))) env))
+  (let-values (((stmts locations) (compile-program x (and (module? env) env))))
+    (values (match (current-mappings-receiver)
+              (#f (print-js stmts))
+              (receive-mappings
+               (let-values (((js mappings) (print-js-with-locations stmts locations)))
+                 (receive-mappings mappings)
+                 js)))
+            env)))
 
 ;;
 ;; Compilation unit state
@@ -69,7 +77,8 @@
 (define-record-type <unit>
   (make-unit env bindings defined assigned exports imported js-names
              lexical-assigned inline-loops emitted gensym-names scopes form-scope
-             records value-refs aliases preferred-names renamed generated-names)
+             records value-refs aliases preferred-names renamed generated-names
+             stmt-locations)
   unit?
   (env unit-env)                        ; module where the code was expanded
   (bindings unit-bindings)              ; name -> Guile binding (memoized)
@@ -96,7 +105,9 @@
   (preferred-names unit-preferred-names) ; t gensym -> q name
   (renamed unit-renamed)                ; t gensym -> #t once bound
   ;; Top-level variables introduced by macros -> JavaScript name.
-  (generated-names unit-generated-names))
+  (generated-names unit-generated-names)
+  ;; Statement -> source location (for source maps).
+  (stmt-locations unit-stmt-locations))
 
 (define current-unit (make-parameter #f))
 
@@ -107,7 +118,7 @@
              (make-hash-table) (make-hash-table) (list (make-hash-table))
              (make-hash-table) (make-hash-table) (make-hash-table)
              (make-hash-table) (make-hash-table) (make-hash-table)
-             (make-hash-table)))
+             (make-hash-table) (make-hash-table)))
 
 (define (user-defined? name)
   (let ((unit (current-unit)))
@@ -125,7 +136,21 @@
 ;;
 
 (define (new-acc) (list 'acc))
-(define (emit! acc stmt) (set-cdr! acc (cons stmt (cdr acc))))
+;; The source location of the statements being emitted: the location of the
+;; innermost expression being compiled that comes from the user's code.
+(define %statement-location (make-fluid #f))
+
+(define (call-with-statement-location x thunk)
+  (let ((src (tree-il-src x)))
+    (if (user-location? src)
+        (with-fluids ((%statement-location src)) (thunk))
+        (thunk))))
+
+(define (emit! acc stmt)
+  (let ((src (fluid-ref %statement-location)))
+    (when src
+      (hashq-set! (unit-stmt-locations (current-unit)) stmt src)))
+  (set-cdr! acc (cons stmt (cdr acc))))
 (define (emit-all! acc stmts) (for-each (cut emit! acc <>) stmts))
 ;; The statements in ACC, without the ones that can't be reached.
 (define (acc-stmts acc)
@@ -935,7 +960,7 @@
                                (delete-duplicates (unit-exports unit)))))
         (unless (null? reexports)
           (emit! acc `(export-names ,(map toplevel-js-name reexports)))))
-      (acc-stmts acc))))
+      (values (acc-stmts acc) (unit-stmt-locations unit)))))
 
 ;; The first location in the user's file found in X (macro expansions might
 ;; not have one at the top).
@@ -949,6 +974,10 @@
 (define (compile-toplevel x acc)
   (set-unit-form-scope! (current-unit) (make-hash-table))
   (note-location! (first-user-location x))
+  (with-fluids ((%statement-location (first-user-location x)))
+    (compile-toplevel* x acc)))
+
+(define (compile-toplevel* x acc)
   (cond
    ((toplevel-define? x) (compile-definition x acc))
    ((use-modules-form? x) #t)
@@ -1203,6 +1232,9 @@
 
 (define (compile-stmt x ctx acc)
   (note-location! (tree-il-src x))
+  (call-with-statement-location x (lambda () (compile-stmt* x ctx acc))))
+
+(define (compile-stmt* x ctx acc)
   (cond
    ((void? x) (deliver! ctx #f acc))
    ((seq? x)
@@ -1670,6 +1702,9 @@
 
 (define (compile-value x acc)
   (note-location! (tree-il-src x))
+  (call-with-statement-location x (lambda () (compile-value* x acc))))
+
+(define (compile-value* x acc)
   (cond
    ((const? x) (compile-constant (const-exp x)))
    ((void? x) '(undefined))

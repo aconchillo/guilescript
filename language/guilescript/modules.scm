@@ -234,6 +234,16 @@
       ((option . _)
        (module-error src "define-module option ~s is not supported" option)))))
 
+;; The (begin form ...) FORM as a syntax object with the source location of
+;; X (also in its forms, which become top-level forms).
+(define (with-source x form)
+  (let ((src (syntax-source x)))
+    (match form
+      (('begin forms ...)
+       (datum->syntax x
+                      (cons 'begin (map (lambda (f) (datum->syntax x f #:source src)) forms))
+                      #:source src)))))
+
 ;; Rewrite a top-level form read from a GuileScript file (see Commentary).
 ;; X is a syntax object.
 (define (transform-module-form x)
@@ -242,10 +252,10 @@
         x
         (match (syntax->datum x)
           (('define-module (? module-name? name) . options)
-           (datum->syntax x (transform-define-module ctx name options (syntax-source x))))
+           (with-source x (transform-define-module ctx name options (syntax-source x))))
           (('use-modules specs ...)
            (if (any (lambda (spec) (module-file ctx (spec-module-name spec (syntax-source x))))
                     specs)
-               (datum->syntax x `(begin ,@(import-forms ctx specs (syntax-source x))))
+               (with-source x `(begin ,@(import-forms ctx specs (syntax-source x))))
                x))
           (_ x)))))

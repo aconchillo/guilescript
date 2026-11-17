@@ -96,6 +96,35 @@ function fib(n) {
 GuileScript can also be used from Guile itself, see
 `examples/fibonacci-server.scm`.
 
+### Source maps
+
+With `--source-map`, GuileScript also generates source maps (`fibonacci.js.map`
+next to the compiled file, or inline when writing to stdout), so browsers'
+developer tools show the `.gs` files and stack traces point to them. With
+Node.js, use `node --enable-source-maps`:
+
+```scheme
+(define (fail-here)
+  (error "boom"))
+
+(fail-here)
+```
+
+```console
+$ guilescript -o app.js --source-map app.gs
+$ node --enable-source-maps app.js
+/path/to/app.gs:2
+  (error "boom"))
+  ^
+
+Error: boom
+    at failHere (/path/to/app.gs:2:3)
+    at Object.<anonymous> (/path/to/app.gs:4:1)
+```
+
+Statements are mapped to the line (and the approximate column) of the
+GuileScript code they come from.
+
 ## Using npm packages and ES modules
 
 `js-import` imports JavaScript modules and `define-public` (or `export`)
@@ -484,15 +513,15 @@ also [Guile modules](#guile-modules)).
 
 - Continuations, `dynamic-wind` and parameters.
 
-- Source maps.
 
 ## Hacking
 
 Run the test suite with `make check` (it needs Node.js). Each test in `tests/`
 is a GuileScript program with its expected output in `;; => ...` comments
 (or an expected compilation error in `;; error: ...` comments). Tests are
-compiled with `-d`, so they can import GuileScript modules (e.g. the ones in
-`tests/project/`).
+compiled with `-d` and `--source-map`, so they can import GuileScript modules
+(e.g. the ones in `tests/project/`), and they are run with source maps
+enabled.
 
 ## License
 
