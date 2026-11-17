@@ -63,4 +63,7 @@
                     ;; unsupported options.
                     (module-set! m 'format simple-format)
 
+                    ;; GuileScript syntax (e.g. guard).
+                    (module-use! m (resolve-interface '(language guilescript prelude)))
+
                     m)))

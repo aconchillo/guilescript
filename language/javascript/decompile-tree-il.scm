@@ -275,6 +275,19 @@
            (named-ref? (call-proc x) 'raise)
            (named-ref? (call-proc x) 'raise-exception))))
 
+;; guard expands into (%js-try (lambda () body ...) (lambda (e) handler ...)),
+;; see (language guilescript prelude).
+(define (try-call? x)
+  (and (call? x) (named-ref? (call-proc x) '%js-try)))
+
+;; The bodies of the functions given to %js-try, which are inlined.
+(define (try-bodies x)
+  (filter-map (lambda (f)
+                (and (lambda? f)
+                     (lambda-case? (lambda-body f))
+                     (lambda-case-body (lambda-body f))))
+              (call-args x)))
+
 ;; (use-modules ...) expands into a call to process-use-modules.
 (define (use-modules-form? x)
   (and (call? x) (named-ref? (call-proc x) 'process-use-modules)))
@@ -386,6 +399,7 @@
   (let walk ((x x))
     (cond
      ((and (call? x) (named-ref? (call-proc x) 'js-await)) #t)
+     ((try-call? x) (any walk (try-bodies x)))
      ((lambda? x) #f)
      ((and (letrec? x) (inline-loop? x))
       (or (any walk (call-args (letrec-body x)))
@@ -628,6 +642,7 @@
 (define (captures-any? body gensyms)
   (let walk ((x body))
     (cond
+     ((try-call? x) (any walk (try-bodies x)))
      ((lambda? x) (references-any? x gensyms))
      ((and (letrec? x) (inline-loop? x))
       (or (any walk (call-args (letrec-body x)))
@@ -840,6 +855,7 @@
     #t)
    ((call? x)
     (and (not (throw-call? x))
+         (not (try-call? x))
          (expression-like? (call-proc x))
          (every expression-like? (call-args x))))
    ((primcall? x) (every expression-like? (primcall-args x)))
@@ -907,6 +923,8 @@
 (define (exits? stmt)
   (match stmt
     ((or ('return _) ('throw _) ('break _) ('continue _)) #t)
+    (('try (? pair? body) _ (? pair? handler))
+     (and (exits? (last body)) (exits? (last handler))))
     (('if _ (? pair? then) (? pair? else))
      (and (exits? (last then)) (exits? (last else))))
     (_ #f)))
@@ -957,8 +975,30 @@
     (cond
      ((find-loop ctx proc)
       => (lambda (loop) (compile-loop-continue loop args ctx acc)))
+     ((try-call? x) (compile-try args ctx acc))
      ((throw-call? x) (compile-throw x acc))
      (else (deliver! ctx (compile-value x acc) acc)))))
+
+;; (%js-try (lambda () body) (lambda (e) handler)) =>
+;;
+;;   try { body } catch (e) { handler }
+;;
+;; Both body and handler deliver their value to CTX.
+(define (compile-try args ctx acc)
+  (match args
+    (((? lambda? thunk) (? lambda? handler))
+     (let ((body (lambda-body thunk))
+           (catch (lambda-body handler)))
+       (unless (and (simple-clause? body) (null? (lambda-case-req body))
+                    (simple-clause? catch) (= 1 (length (lambda-case-req catch))))
+         (compile-error "invalid guard"))
+       (let ((body-acc (new-acc))
+             (catch-acc (new-acc)))
+         (compile-stmt (lambda-case-body body) ctx body-acc)
+         (let ((name (bind! (car (lambda-case-gensyms catch)) (car (lambda-case-req catch)))))
+           (compile-stmt (lambda-case-body catch) ctx catch-acc)
+           (emit! acc `(try ,(acc-stmts body-acc) ,name ,(acc-stmts catch-acc)))))))
+    (_ (compile-error "invalid guard"))))
 
 (define (compile-throw x acc)
   (let ((args (call-args x)))
@@ -1407,6 +1447,11 @@
      ((throw-call? x)
       (compile-throw x acc)
       '(undefined))
+     ((try-call? x)
+      (let ((t (fresh-name "t")))
+        (emit! acc `(decl "let" ,t #f))
+        (compile-try args `(assign . ,t) acc)
+        `(id ,t)))
      ((primitive-for proc)
       => (lambda (prim) (compile-primitive-call prim args acc)))
      ((named-ref? proc 'apply) (compile-apply args acc))

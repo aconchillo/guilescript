@@ -58,6 +58,7 @@ TESTS = \
 	tests/error-undeclared.gs \
 	tests/functions.gs \
 	tests/globals.gs \
+	tests/guard.gs \
 	tests/guile-modules.gs \
 	tests/interop.gs \
 	tests/lists.gs \

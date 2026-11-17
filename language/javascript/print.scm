@@ -43,7 +43,7 @@
 ;;   (expr-stmt E) (decl KIND NAME E) (fun-decl NAME PARAMS STMTS)
 ;;   (async-fun-decl NAME PARAMS STMTS)
 ;;   (return E) (if T STMTS STMTS) (while LABEL STMTS) (break LABEL)
-;;   (continue LABEL) (throw E) (block STMTS) (export STMT)
+;;   (continue LABEL) (throw E) (try STMTS NAME STMTS) (block STMTS) (export STMT)
 ;;   (export-names NAMES) (import FROM DEFAULT NAMESPACE NAMES)
 ;;
 ;; E, LABEL, the else STMTS and DEFAULT can be #f. The label of a while loop
@@ -333,6 +333,9 @@
        (string-append pad "continue" (if label (string-append " " label) "") ";\n"))
       (('throw e)
        (string-append pad "throw " (expr e 0 indent) ";\n"))
+      (('try body name handler)
+       (string-append pad "try " (block body indent)
+                      " catch (" name ") " (block handler indent) "\n"))
       (('block body)
        (string-append pad (block body indent) "\n"))
       (('export stmt)

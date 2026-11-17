@@ -289,6 +289,19 @@ A few things to keep in mind:
 |-----------------------------------+----------------------------------------------|
 | (error "Bad value:" x)            | throw new Error(["Bad value:", x].join(" ")) |
 |-----------------------------------+----------------------------------------------|
+| (raise obj)                       | throw obj                                    |
+|-----------------------------------+----------------------------------------------|
+| (guard (e clause ...) body ...)   | try { body } catch (e) { clause ... }        |
+|-----------------------------------+----------------------------------------------|
+
+=guard= is the R7RS one: its clauses are =cond= clauses and, if none of them
+matches, the exception is raised again.
+
+#+BEGIN_SRC scheme
+(define (parse-json s)
+  (guard (e ((error-object? e) (console-error (error-object-message e)) #f))
+    (.parse JSON s)))
+#+END_SRC
 
 =cond=, =case=, =when=, =unless=, =let*=, =letrec=, internal definitions,
 =case-lambda=, =apply=, quasiquote and all macros (=define-syntax=,
@@ -389,6 +402,8 @@ These procedures are compiled inline into JavaScript (see
   make-hash-table hash-ref hash-set! hash-remove! hash-clear! hash-for-each
   hash-map->list=
 
+- Errors: =error-object? error-object-message=
+
 - Logging: =console-log console-debug console-info console-warn
   console-error=
 
@@ -397,7 +412,7 @@ also [[*Guile modules][Guile modules]]).
 
 * What's missing?
 
-- =try=/=catch=, =this= and classes.
+- =this= and classes (and =finally=).
 
 - A small (tree-shakeable) runtime for things that can't be done inline, like
   a deep =equal?= or =format=.

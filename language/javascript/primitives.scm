@@ -718,6 +718,13 @@
                    entries)))
         (_ (compile-error "js-obj needs an even number of arguments"))))))
 
+;;
+;; Errors
+;;
+
+(define-inline error-object? (x) (binop "instanceof" x '(id "Error")))
+(define-inline error-object-message (x) (prop x "message"))
+
 (define-inline js-typeof (x) (unop "typeof " x))
 (define-inline js-instanceof (x type) (binop "instanceof" x type))
 
