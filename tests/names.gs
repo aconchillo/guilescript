@@ -51,3 +51,8 @@
   (let ((x (+ x 1)))
     (console-log x)))
 ;; => 2
+
+;; Module prefixes like lib: separate words too.
+(define (lib:greet) "hi")
+(console-log (lib:greet))
+;; => hi

@@ -29,6 +29,7 @@
 ;;   %internal    -> _internal
 ;;   new          -> new_         (JavaScript reserved words)
 ;;   <http-request> -> HttpRequest (types, e.g. record types)
+;;   u:shout      -> uShout       (module prefixes)
 
 ;;; Code:
 
@@ -121,7 +122,7 @@
 (define %char-words
   '((#\+ . "plus") (#\* . "star") (#\/ . "slash") (#\< . "lt") (#\> . "gt")
     (#\= . "eq") (#\! . "bang") (#\? . "p") (#\% . "pct") (#\& . "and")
-    (#\~ . "tilde") (#\^ . "caret") (#\. . "dot") (#\: . "colon")
+    (#\~ . "tilde") (#\^ . "caret") (#\. . "dot")
     (#\@ . "at") (#\# . "hash")))
 
 (define (string-replace-all s from to)
@@ -170,6 +171,8 @@
    (map (lambda (c)
           (cond
            ((or (identifier-char? c) (char=? c #\-)) (string c))
+           ;; Prefixes (e.g. u:shout) separate words too.
+           ((char=? c #\:) "-")
            ((assv-ref %char-words c) => (lambda (w) (string-append "-" w "-")))
            (else (string-append "-u" (number->string (char->integer c) 16) "-"))))
         (string->list s))))
