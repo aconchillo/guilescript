@@ -75,3 +75,11 @@
 (define-values (only) (values 'one))
 (console-log only)
 ;; => one
+
+;; A single value is never destructured, even if it's a list or a string.
+(define one '(5))
+(call-with-values (lambda () "abc") console-log)
+;; => abc
+(console-log (call-with-values (lambda () (car one)) (lambda args args))
+             (call-with-values (lambda () (values '(1 2 3))) (lambda (a . rest) (list a rest))))
+;; => [ 5 ] [ [ 1, 2, 3 ], [] ]

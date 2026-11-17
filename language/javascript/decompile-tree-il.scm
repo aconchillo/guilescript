@@ -481,6 +481,30 @@
          (not (lambda-case-rest clause))
          (lambda-case-body clause))))
 
+;; Does X produce exactly one value? Multiple values are arrays, but a
+;; single value is not: it must not be destructured, even if it's an array
+;; or a string. (Calls to other procedures might return several values.)
+(define (single-value? x)
+  (define (values-call? name args)
+    (match name
+      ('values (= 1 (length args)))
+      ((or 'floor/ 'truncate/) #f)
+      (_ #t)))
+  (cond
+   ((or (const? x) (void? x) (lexical-ref? x) (toplevel-ref? x) (module-ref? x)
+        (lambda? x) (lexical-set? x) (toplevel-set? x))
+    #t)
+   ((call? x)
+    (let ((prim (primitive-for (call-proc x))))
+      (and prim (values-call? (primitive-name prim) (call-args x)))))
+   ((primcall? x) (values-call? (primcall-name x) (primcall-args x)))
+   ((conditional? x)
+    (and (single-value? (conditional-consequent x))
+         (single-value? (conditional-alternate x))))
+   ((seq? x) (single-value? (seq-tail x)))
+   ((let? x) (single-value? (let-body x)))
+   (else #f)))
+
 ;; The parts of a call-with-values that are compiled inline: the producer
 ;; and consumer bodies (if they are literal lambdas).
 (define (call-with-values-bodies x)
@@ -1439,6 +1463,11 @@
         (_ `(call ,producer-js)))
       `(call ,producer-js)))
 
+;; A thunk literal that produces a single value.
+(define (single-producer? producer)
+  (let ((body (thunk-body producer)))
+    (and body (single-value? body))))
+
 ;; Emit the bindings of the consumer (a lambda literal) and return its body.
 (define (compile-values-bindings! args acc)
   (match args
@@ -1462,9 +1491,10 @@
              (compile-stmt body 'effect acc)
              (emit! acc `(expr-stmt (call ,(compile-value producer acc))))))
         (else
-         (let* ((value (if body
-                           (compile-value body acc)
-                           `(call ,(compile-value producer acc))))
+         (let* ((value (cond
+                        ((not body) `(call ,(compile-value producer acc)))
+                        ((single-value? body) `(array ,(compile-value body acc)))
+                        (else (compile-value body acc))))
                 (kind (if (any lexical-assigned? gensyms) "let" "const"))
                 (names (map-in-order bind-local! (take gensyms (length req)) req))
                 (rest-name (and rest (bind-local! (list-ref gensyms (length req)) rest))))
@@ -2015,6 +2045,7 @@
             ((producer consumer)
              (call-function consumer
                             (match (producer-value (car args) producer)
+                              ((? (const (single-producer? (car args))) e) (list e))
                               (('array . elts) elts)
                               (e `((spread ,e)))))))))
      ((primitive-for proc)
