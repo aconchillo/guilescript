@@ -29,8 +29,9 @@ $ guile server.scm
 Task manager on http://localhost:8080
 ```
 
-To run it with GuileScript's source tree instead of an installed
-GuileScript, use `GUILE_LOAD_PATH=../.. guile server.scm`.
+To use GuileScript's source tree instead of an installed GuileScript, run
+the commands with its `env` script (created by `./configure`):
+`../../env guile server.scm`.
 
 The `PORT` and `TASKS_DB` environment variables change the port and the
 database file (`tasks.db`).
@@ -85,4 +86,6 @@ $ npm install
 $ npm run dev
 ```
 
-`npm install` installs `vite-plugin-guilescript` from this repository.
+`npm install` installs `vite-plugin-guilescript` from this repository. The
+plugin runs the `guilescript` command, so with GuileScript's source tree run
+Vite with the `env` script too: `../../../env npm run dev`.

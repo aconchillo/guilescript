@@ -584,6 +584,14 @@ also [Guile modules](#guile-modules)).
 
 ## Hacking
 
+To use GuileScript without installing it, run commands with the `env` script
+of the build directory (created by `./configure`). It sets up Guile's load
+paths and adds the `guilescript` command to `PATH`:
+
+```console
+$ ./env guilescript examples/basic/fibonacci.gs
+```
+
 Run the test suite with `make check` (it needs Node.js). Each test in `tests/`
 is a GuileScript program with its expected output in `;; => ...` comments
 (or an expected compilation error in `;; error: ...` comments). Tests are
