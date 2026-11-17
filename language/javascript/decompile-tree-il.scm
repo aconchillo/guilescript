@@ -246,6 +246,7 @@
 (define (throw-call? x)
   (and (call? x)
        (or (named-ref? (call-proc x) 'error)
+           (named-ref? (call-proc x) 'throw)
            (named-ref? (call-proc x) 'raise)
            (named-ref? (call-proc x) 'raise-exception))))
 
@@ -280,7 +281,7 @@
          ((target) target)
          (_ #f))))
 
-(define %special-procedures '(apply error raise raise-exception js-import))
+(define %special-procedures '(apply error throw raise raise-exception js-import))
 
 ;;
 ;; Analysis
@@ -818,7 +819,7 @@
 
 (define (compile-throw x acc)
   (let ((args (call-args x)))
-    (if (named-ref? (call-proc x) 'error)
+    (if (or (named-ref? (call-proc x) 'error) (named-ref? (call-proc x) 'throw))
         (let ((exprs (compile-exprs args acc)))
           (emit! acc `(throw (new (id "Error")
                                   ,(match exprs
