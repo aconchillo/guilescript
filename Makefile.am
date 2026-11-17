@@ -72,10 +72,12 @@ TESTS = \
 	tests/records.gs \
 	tests/strings.gs \
 	tests/values.gs \
+	vite-plugin-guilescript/test.mjs \
 	$(EXAMPLES)
 
-TEST_EXTENSIONS = .gs
+TEST_EXTENSIONS = .gs .mjs
 GS_LOG_COMPILER = $(top_srcdir)/tests/run-test
+MJS_LOG_COMPILER = $(top_srcdir)/tests/run-node-test
 AM_TESTS_ENVIRONMENT = \
 	GUILE="$(GUILE)"; export GUILE; \
 	GUILE_LOAD_COMPILED_PATH="$(abs_top_builddir)$${GUILE_LOAD_COMPILED_PATH:+:$$GUILE_LOAD_COMPILED_PATH}"; \
@@ -87,4 +89,14 @@ EXTRA_DIST = \
 	tests/project/shapes/circle.gs \
 	tests/project/util.gs \
 	tests/run-test \
-	examples/fibonacci-server.scm
+	tests/run-node-test \
+	vite-plugin-guilescript/README.md \
+	vite-plugin-guilescript/index.js \
+	vite-plugin-guilescript/package.json \
+	examples/fibonacci-server.scm \
+	examples/vite/README.md \
+	examples/vite/index.html \
+	examples/vite/package.json \
+	examples/vite/src/counter.gs \
+	examples/vite/src/main.gs \
+	examples/vite/vite.config.js

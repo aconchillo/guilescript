@@ -1,0 +1,40 @@
+#!/bin/sh
+#
+# Copyright (C) 2026 Aleix Conchillo Flaque <aconchillo@gmail.com>
+#
+# This file is part of GuileScript.
+#
+# GuileScript is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# GuileScript is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with GuileScript. If not, see https://www.gnu.org/licenses/.
+#
+# Usage: run-node-test FILE.mjs
+#
+# Runs a JavaScript test with Node.js, with GUILESCRIPT set to the
+# guilescript command of the source tree. Exits with 77 (skip) if Node.js is
+# not available.
+
+set -u
+
+srcdir=$(cd "$(dirname "$0")/.." && pwd)
+NODE=${NODE:-node}
+
+if ! command -v "$NODE" >/dev/null 2>&1; then
+  echo "SKIP: $NODE not found"
+  exit 77
+fi
+
+GUILE_LOAD_PATH="$srcdir${GUILE_LOAD_PATH:+:$GUILE_LOAD_PATH}"
+GUILESCRIPT="$srcdir/guilescript"
+export GUILE_LOAD_PATH GUILESCRIPT
+
+exec "$NODE" "$1"

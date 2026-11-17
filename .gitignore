@@ -16,3 +16,6 @@ Makefile.in
 *.trs
 
 guilescript-*
+
+node_modules/
+examples/vite/dist/

@@ -174,6 +174,38 @@ directories given with `-L`. `#:select` and `#:prefix` work as usual.
 GuileScript modules export functions and values. Macros can be shared through
 Guile modules.
 
+## Using with Vite
+
+`vite-plugin-guilescript` (in this repository) lets [Vite](https://vite.dev/)
+compile `.gs` files, so they can be used like any other module, both with the
+development server and in production builds:
+
+```js
+// vite.config.js
+import { defineConfig } from "vite";
+import guilescript from "vite-plugin-guilescript";
+
+export default defineConfig({
+  plugins: [guilescript()],
+});
+```
+
+```html
+<script type="module" src="/src/main.gs"></script>
+```
+
+Compilation errors are shown with their location in Vite's error overlay. The
+plugin is not published on npm yet, so install it from this repository:
+
+```console
+$ npm install --save-dev /path/to/guilescript/vite-plugin-guilescript
+```
+
+See `examples/vite` for a complete example. (The plugin compiles each file
+with `guilescript --source-imports`, which imports GuileScript modules by the
+path of their `.gs` file, e.g. `./util.gs`, so they are compiled by the plugin
+too.)
+
 ## Guile modules
 
 Modules that are not GuileScript modules are Guile modules. For every name
@@ -452,7 +484,7 @@ also [Guile modules](#guile-modules)).
 
 - Continuations, `dynamic-wind` and parameters.
 
-- Source maps and a bundler plugin.
+- Source maps.
 
 ## Hacking
 
