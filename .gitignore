@@ -21,3 +21,4 @@ node_modules/
 examples/vite/dist/
 
 examples/task-manager/tasks.db
+examples/task-manager/react/dist/
