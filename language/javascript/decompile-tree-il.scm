@@ -57,8 +57,7 @@
   #:use-module (srfi srfi-9)
   #:use-module (srfi srfi-11)
   #:use-module (srfi srfi-26)
-  #:export (decompile-tree-il
-            compile-program))
+  #:export (decompile-tree-il))
 
 (define (decompile-tree-il x env opts)
   (let-values (((stmts locations) (compile-program x (and (module? env) env))))
@@ -189,11 +188,9 @@
     (if (js-protected-global? s) s (scheme->js-name name))))
 
 (define (toplevel-js-name name)
-  (let* ((s (symbol->string name))
-         (js (cond
-              ((js-protected-global? s) s)
-              ((generated-name? name) (generated-js-name name))
-              (else (scheme->js-name name)))))
+  (let ((js (if (generated-name? name)
+                (generated-js-name name)
+                (exported-js-name name))))
     (note-name-kind! js name)
     js))
 
@@ -286,9 +283,6 @@
     (when (symbol? source)
       (note-name-kind! name source))
     name))
-
-(define (fresh-name base)
-  (declare-name! base))
 
 (define (bind! gensym source)
   (let ((name (declare-name! source)))
@@ -785,17 +779,14 @@
 ;; (Names introduced by macros get their JavaScript name later.)
 (define (register-js-name! name)
   (unless (generated-name? name)
-    (register-user-js-name! name)))
-
-(define (register-user-js-name! name)
-  (let* ((table (unit-js-names (current-unit)))
-         (js (toplevel-js-name name))
-         (owner (hash-ref table js #f)))
-    (cond
-     ((not owner) (hash-set! table js name))
-     ((not (eq? owner name))
-      (compile-error "`~a' and `~a' both compile to the JavaScript name `~a'"
-                     owner name js)))))
+    (let* ((table (unit-js-names (current-unit)))
+           (js (toplevel-js-name name))
+           (owner (hash-ref table js #f)))
+      (cond
+       ((not owner) (hash-set! table js name))
+       ((not (eq? owner name))
+        (compile-error "`~a' and `~a' both compile to the JavaScript name `~a'"
+                       owner name js))))))
 
 ;;
 ;; Loops
@@ -1002,7 +993,7 @@
       (emit! acc (loop-jump 'break (last loops) ctx)))))
 
 (define (hoist! e acc)
-  (let ((t (fresh-name "t")))
+  (let ((t (declare-name! "t")))
     (emit! acc `(decl "const" ,t ,e))
     `(id ,t)))
 
@@ -1010,7 +1001,7 @@
 ;; Programs
 ;;
 
-(define* (compile-program x #:optional env)
+(define (compile-program x env)
   (parameterize ((current-unit (new-unit env))
                  (current-helper-ref use-helper!)
                  (current-boolean-name? boolean-name?))
@@ -1074,11 +1065,10 @@
 ;; The first location in the user's file found in X (macro expansions might
 ;; not have one at the top).
 (define (first-user-location x)
-  (tree-il-fold (lambda (y found)
-                  (or found
-                      (and (user-location? (tree-il-src y)) (tree-il-src y))))
-                (lambda (y found) found)
-                #f x))
+  (tree-any (lambda (y)
+              (let ((src (tree-il-src y)))
+                (and (user-location? src) src)))
+            x))
 
 (define (compile-toplevel-forms forms acc)
   (match forms
@@ -1130,10 +1120,11 @@
     (emit! acc (if (memq (car names) (unit-exports unit)) `(export ,stmt) stmt))))
 
 (define* (compile-toplevel x acc #:optional (compile compile-toplevel*))
-  (set-unit-form-scope! (current-unit) (make-hash-table))
-  (note-location! (first-user-location x))
-  (with-fluids ((%statement-location (first-user-location x)))
-    (compile x acc)))
+  (let ((src (first-user-location x)))
+    (set-unit-form-scope! (current-unit) (make-hash-table))
+    (note-location! src)
+    (with-fluids ((%statement-location src))
+      (compile x acc))))
 
 (define (compile-toplevel* x acc)
   (cond
@@ -1376,15 +1367,15 @@
             (values (map (lambda (p) `(param ,p)) params)
                     `((return (new ,type ,@(map (lambda (p) `(id ,p)) params)))))))
          (('predicate _)
-          (let ((obj (fresh-name "obj")))
+          (let ((obj (declare-name! "obj")))
             (values `((param ,obj)) `((return (binop "instanceof" (id ,obj) ,type))))))
          (('accessor _ (? const? field))
-          (let ((obj (fresh-name "obj")))
+          (let ((obj (declare-name! "obj")))
             (values `((param ,obj))
                     `((return (dot (id ,obj) ,(field-js-name (const-exp field))))))))
          (('modifier _ (? const? field))
-          (let ((obj (fresh-name "obj"))
-                (value (fresh-name "value")))
+          (let ((obj (declare-name! "obj"))
+                (value (declare-name! "value")))
             (values `((param ,obj) (param ,value))
                     `((expr-stmt (assign (dot (id ,obj) ,(field-js-name (const-exp field)))
                                          (id ,value)))))))
@@ -1811,7 +1802,7 @@
 
 ;; case-lambda: dispatch on the number of arguments.
 (define (compile-case-lambda clause)
-  (let ((args (fresh-name "args")))
+  (let ((args (declare-name! "args")))
     (define (compile-branch clause)
       (when (or (lambda-case-opt clause) (lambda-case-kw clause))
         (compile-error "case-lambda clauses with #:optional or #:key arguments are not supported"))
@@ -1886,7 +1877,7 @@
 (define (primitive-value prim)
   (cond
    ((primitive-value-builder prim)
-    => (lambda (build) (call-with-function-scope (lambda () (build fresh-name)))))
+    => (lambda (build) (call-with-function-scope (lambda () (build declare-name!)))))
    ((not (primitive-max-args prim))
     (compile-error "`~a' can't be used as a value" (primitive-name prim)))
    (else
@@ -1894,11 +1885,11 @@
     ;; are undefined: (s, start, end) => end === undefined ? ... : ...
     (call-with-function-scope
      (lambda ()
-       (let* ((params (map-in-order (lambda (_) (fresh-name "x"))
+       (let* ((params (map-in-order (lambda (_) (declare-name! "x"))
                                     (iota (primitive-max-args prim))))
               (call-with (lambda (n)
                            (let ((args (map (lambda (p) `(id ,p)) (list-head params n))))
-                             ((primitive-compiler prim) args (map (const #f) args) fresh-name)))))
+                             ((primitive-compiler prim) args (map (const #f) args) declare-name!)))))
          `(arrow ,(map (lambda (p) `(param ,p)) params)
                  ((return ,(let lp ((n (primitive-min-args prim)))
                              (if (= n (length params))
@@ -1916,15 +1907,15 @@
       => (lambda (prop)
            (call-with-function-scope
             (lambda ()
-              (let ((obj (fresh-name "obj")))
+              (let ((obj (declare-name! "obj")))
                 `(arrow ((param ,obj)) ((return (dot (id ,obj) ,prop)))))))))
      ((method-ref x)
       ;; .method as a value: (obj, ...args) => obj.method(...args)
       => (lambda (method)
            (call-with-function-scope
             (lambda ()
-              (let ((obj (fresh-name "obj"))
-                    (args (fresh-name "args")))
+              (let ((obj (declare-name! "obj"))
+                    (args (declare-name! "args")))
                 `(arrow ((param ,obj) (rest ,args))
                         ((return (call (dot (id ,obj) ,method) (spread (id ,args)))))))))))
      ((and (memq name %special-procedures) (not (user-defined? name)))
@@ -1975,7 +1966,7 @@
     (unsupported x))
    (else
     ;; Anything else needs statements (e.g. loops): use a temporary.
-    (let ((t (fresh-name "t")))
+    (let ((t (declare-name! "t")))
       (emit! acc `(decl "let" ,t #f))
       (compile-stmt x `(assign . ,t) acc)
       `(id ,t)))))
@@ -2008,7 +1999,7 @@
       (if (acc-empty? sub)
           `(binop ,op ,a ,b)
           ;; b needs statements: let t = a; if (t) { ...; t = b; }
-          (let ((t (fresh-name "t")))
+          (let ((t (declare-name! "t")))
             (emit! acc `(decl "let" ,t ,a))
             (emit! acc `(if ,(if (string=? op "&&") `(id ,t) `(unop "!" (id ,t)))
                             ,(append (acc-stmts sub) (assign-stmts t b))
@@ -2020,7 +2011,7 @@
     (logical "&&" (conditional-test x) (conditional-consequent x)))
    ((or-pattern x)
     => (match-lambda ((a-x . b-x) (logical "||" a-x b-x))))
-   ((and (let? x) (not (or-pattern x)))
+   ((let? x)
     (compile-let-bindings! x acc)
     (compile-test (let-body x) acc))
    ((seq? x)
@@ -2035,7 +2026,7 @@
            (else (compile-test (conditional-alternate x) else-acc)))
       (if (and (acc-empty? then-acc) (acc-empty? else-acc))
           (boolean-ternary test then else)
-          (let ((t (fresh-name "t")))
+          (let ((t (declare-name! "t")))
             (emit! acc `(decl "let" ,t #f))
             (emit-if! test
                       (append (acc-stmts then-acc) (assign-stmts t then))
@@ -2064,7 +2055,7 @@
             (b (compile-value b-x sub)))
        (cond
         ((not (acc-empty? sub))
-         (let ((t (fresh-name "t")))
+         (let ((t (declare-name! "t")))
            (emit! acc `(decl "let" ,t #f))
            (emit-if! test (assign-stmts t a) (append (acc-stmts sub) (assign-stmts t b)) acc)
            `(id ,t)))
@@ -2083,7 +2074,7 @@
             (else (compile-value (conditional-alternate x) else-acc)))
        (if (and (acc-empty? then-acc) (acc-empty? else-acc))
            (boolean-ternary test then else)
-           (let ((t (fresh-name "t")))
+           (let ((t (declare-name! "t")))
              (emit! acc `(decl "let" ,t #f))
              (emit-if! test
                        (append (acc-stmts then-acc) (assign-stmts t then))
@@ -2130,7 +2121,7 @@
       (compile-throw x acc)
       '(undefined))
      ((try-call? x)
-      (let ((t (fresh-name "t")))
+      (let ((t (declare-name! "t")))
         (emit! acc `(decl "let" ,t #f))
         (compile-try args `(assign . ,t) acc)
         `(id ,t)))
@@ -2159,12 +2150,9 @@
              (_ (compile-error "(.-~a obj) needs exactly one object" prop)))))
      ((setter-target proc)
       => (lambda (target) (compile-setter target args acc)))
-     ((named-ref? proc 'js-import)
-      (compile-error "js-import is only allowed at the top level"))
+     ;; (Nested js-import and js-global are found by analyze-form!.)
      ((named-ref? proc 'process-use-modules)
       (compile-error "use-modules is only allowed at the top level"))
-     ((named-ref? proc 'js-global)
-      (compile-error "js-global is only allowed at the top level"))
      ((named-ref? proc '%js-values-ref)
       (match args
         ((values (? const? vars) (? const? var))
@@ -2276,4 +2264,4 @@
       ;; Names created by primitives are parameters of the functions they
       ;; create, so they don't need to be reserved in the current scope.
       (call-with-function-scope
-       (lambda () ((primitive-compiler prim) exprs tils fresh-name))))))
+       (lambda () ((primitive-compiler prim) exprs tils declare-name!))))))

@@ -53,7 +53,6 @@
   #:use-module (srfi srfi-9)
   #:use-module (srfi srfi-26)
   #:export (lookup-primitive
-            primitive?
             primitive-name
             primitive-min-args
             primitive-max-args
@@ -64,14 +63,12 @@
             current-helper-ref
             helper-js-name
             helper-definition
-            js-path
             call-function
             js-negate
             boolean-expr?
             current-boolean-name?
             truth
-            substitute
-            constant-name))
+            substitute))
 
 (define-record-type <primitive>
   (make-primitive name min max dup compiler value helpers)

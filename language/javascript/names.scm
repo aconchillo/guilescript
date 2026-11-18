@@ -42,7 +42,6 @@
             property-symbol?
             property-js-name
             js-identifier-name?
-            js-identifier?
             js-reserved?
             js-protected-global?
             js-standard-global?))
@@ -112,10 +111,6 @@
   (and (positive? (string-length s))
        (identifier-start-char? (string-ref s 0))
        (string-every identifier-char? s)))
-
-;; Valid as a variable name.
-(define (js-identifier? s)
-  (and (js-identifier-name? s) (not (js-reserved? s))))
 
 ;; Characters that are valid in Scheme identifiers but not in JavaScript
 ;; ones. They become words in the camelCased result.

@@ -101,13 +101,13 @@
     (set-module-context-name! ctx name)
     (set-module-context-root!
      ctx
-     (let lp ((dir dir) (dirs (reverse dirs)))
-       (match dirs
+     (let lp ((dir dir) (parents (reverse dirs)))
+       (match parents
          (() dir)
          ((d . rest)
           (unless (string=? (basename dir) d)
             (module-error src "the module ~s should be in the directory ~a"
-                          name (string-join (map symbol->string (drop-right name 1)) "/")))
+                          name (string-join dirs "/")))
           (lp (dirname dir) rest)))))))
 
 ;; The .gs file of the module NAME, or #f if it's not a GuileScript module.
