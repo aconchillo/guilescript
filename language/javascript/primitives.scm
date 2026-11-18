@@ -66,6 +66,7 @@
             primitive-helpers
             primitive-single-value?
             current-helper-ref
+            current-procedure-ref
             helper-js-name
             helper-definition
             call-function
@@ -280,39 +281,24 @@
          (next)))
     (_ `(call ,f ,@args))))
 
-;; If F-TIL is a primitive (e.g. + or odd?) used as a value, compile it
-;; inline with the given ARGS instead of calling it.
-(define (inline-primitive f f-til args fresh)
-  (and f-til
-       (not (match f (('id _) #t) (_ #f))) ; redefined by the user
-       (let* ((name (cond
-                     ((toplevel-ref? f-til) (toplevel-ref-name f-til))
-                     ((module-ref? f-til) (module-ref-name f-til))
-                     (else #f)))
-              (prim (and name (lookup-primitive name))))
-         (and prim
-              (primitive-arity-ok? prim (length args))
-              ((primitive-compiler prim) args (map (const #f) args) fresh)))))
+;; A procedure that tells what a procedure given to a primitive (e.g. the
+;; function given to map) is, from its Tree-IL: a primitive (e.g. + or odd?),
+;; (method . NAME) for .method, (property . NAME) for .-prop, or #f. The
+;; compiler sets it, since it knows the names that are redefined or imported.
+(define current-procedure-ref (make-parameter (const #f)))
 
-;; If F-TIL is a method (e.g. .toUpperCase) or a property (e.g. .-length)
-;; used as a value, use it directly on the first argument.
-(define (inline-method f f-til args)
-  (and f-til
-       (toplevel-ref? f-til)
-       (match f (('arrow . _) #t) (_ #f)) ; not redefined by the user
-       (pair? args)
-       (let ((name (toplevel-ref-name f-til)))
-         (cond
-          ((method-symbol? name)
-           `(call (dot ,(car args) ,(method-js-name name)) ,@(cdr args)))
-          ((property-symbol? name)
-           `(dot ,(car args) ,(property-js-name name)))
-          (else #f)))))
-
+;; Call F (F-TIL in Tree-IL) with ARGS. Primitives, methods and properties
+;; are used directly instead: (map odd? l) => l.map((x) => x % 2 !== 0).
 (define (call-callback f f-til args fresh)
-  (or (inline-primitive f f-til args fresh)
-      (inline-method f f-til args)
-      (call-function f args)))
+  (match (list (and f-til ((current-procedure-ref) f-til)) args)
+    (((? primitive? prim) _)
+     (=> next)
+     (if (primitive-arity-ok? prim (length args))
+         ((primitive-compiler prim) args (map (const #f) args) fresh)
+         (next)))
+    ((('method . name) (obj . rest)) `(call (dot ,obj ,name) ,@rest))
+    ((('property . name) (obj . _)) `(dot ,obj ,name))
+    (_ (call-function f args))))
 
 ;; JavaScript array methods pass extra arguments (index, array) to callbacks,
 ;; so a callback is wrapped unless it is known to take exactly N arguments.

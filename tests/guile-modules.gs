@@ -8,13 +8,19 @@
 (use-modules (srfi srfi-26)
              (ice-9 match)
              ((srfi srfi-1) #:select ((fold . srfi:fold) iota))
-             ((srfi srfi-1) #:prefix s1:))
+             ((srfi srfi-1) #:prefix s1:)
+             ((guile) #:select ((+ . plus) (odd? . odd-number?))))
 
 (console-log (map (cut * 2 <>) '(1 2 3)))
 ;; => [ 2, 4, 6 ]
 
 (console-log (srfi:fold + 0 (iota 4)) (s1:delete-duplicates '(1 1 2)))
 ;; => 6 [ 1, 2 ]
+
+;; Renamed built-in procedures are compiled inline too, also when they are
+;; given to other procedures.
+(console-log (plus 1 2) (srfi:fold plus 0 (iota 4)) (filter odd-number? (iota 5)))
+;; => 3 6 [ 1, 3 ]
 
 ;; Pattern matching with (ice-9 match).
 (define (describe x)

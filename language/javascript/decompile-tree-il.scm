@@ -601,6 +601,15 @@
        (not (user-defined? (toplevel-ref-name x)))
        (property-js-name (toplevel-ref-name x))))
 
+;; What the procedure X is: a primitive, (method . NAME), (property . NAME)
+;; or #f (see current-procedure-ref).
+(define (procedure-ref x)
+  (cond
+   ((primitive-for x) => identity)
+   ((method-ref x) => (cut cons 'method <>))
+   ((property-ref x) => (cut cons 'property <>))
+   (else #f)))
+
 ;; (set! (f arg ...) value) expands to ((setter f) arg ... value). Returns f.
 (define (setter-target proc)
   (and (named-call? proc 'setter)
@@ -1003,6 +1012,7 @@
 (define (compile-program x env)
   (parameterize ((current-unit (new-unit env))
                  (current-helper-ref use-helper!)
+                 (current-procedure-ref procedure-ref)
                  (current-boolean-name? boolean-name?))
     (reset-location!)
     (analyze! x)
