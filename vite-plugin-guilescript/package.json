@@ -19,7 +19,7 @@
   ],
   "license": "GPL-3.0-or-later",
   "author": "Aleix Conchillo Flaqué <aconchillo@gmail.com>",
-  "homepage": "https://github.com/aconchillo/guilescript/tree/master/vite-plugin-guilescript#readme",
+  "homepage": "https://github.com/aconchillo/guilescript/tree/main/vite-plugin-guilescript#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/aconchillo/guilescript.git",
