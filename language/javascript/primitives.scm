@@ -426,25 +426,24 @@
 ;; Numbers
 ;;
 
+;; (...xs) => xs.reduce((a, b) => a + b, 0)
+(define (reduce-value op init)
+  (lambda (fresh)
+    (let ((xs (fresh "xs")) (a (fresh "a")) (b (fresh "b")))
+      `(arrow ((rest ,xs))
+              ((return ,(method `(id ,xs) "reduce"
+                                (arrow (list a b) (binop op `(id ,a) `(id ,b)))
+                                (num init))))))))
+
 (define-primitive! '+ 0 #f
   (simple-compiler
    (lambda args (if (null? args) (num 0) (left-fold "+" args))))
-  #:value (lambda (fresh)
-            (let ((xs (fresh "xs")) (a (fresh "a")) (b (fresh "b")))
-              `(arrow ((rest ,xs))
-                      ((return ,(method `(id ,xs) "reduce"
-                                        (arrow (list a b) (binop "+" `(id ,a) `(id ,b)))
-                                        (num 0))))))))
+  #:value (reduce-value "+" 0))
 
 (define-primitive! '* 0 #f
   (simple-compiler
    (lambda args (if (null? args) (num 1) (left-fold "*" args))))
-  #:value (lambda (fresh)
-            (let ((xs (fresh "xs")) (a (fresh "a")) (b (fresh "b")))
-              `(arrow ((rest ,xs))
-                      ((return ,(method `(id ,xs) "reduce"
-                                        (arrow (list a b) (binop "*" `(id ,a) `(id ,b)))
-                                        (num 1))))))))
+  #:value (reduce-value "*" 1))
 
 (define (minus-value op one-arg)
   ;; (x, ...ys) => ys.length === 0 ? -x : ys.reduce((a, b) => a - b, x)
@@ -548,35 +547,38 @@
 (define-inline negative? (x) (binop "<" x (num 0)))
 (define-inline odd? (x) (binop "!==" (binop "%" x (num 2)) (num 0)))
 (define-inline even? (x) (binop "===" (binop "%" x (num 2)) (num 0)))
-(define-inline quotient (a b) (call (js-path "Math.trunc") (binop "/" a b)))
-(define-inline remainder (a b) (binop "%" a b))
 (define-inline expt (a b) (binop "**" a b))
 (define-inline (exact->inexact inexact->exact exact inexact) (x) x)
-(define-inline number? (x) (binop "===" (unop "typeof " x) (str "number")))
 (define-inline integer? (x) (call (js-path "Number.isInteger") x))
 (define-inline nan? (x) (call (js-path "Number.isNaN") x))
 
-(define (floor-remainder a b) (binop "%" (binop "+" (binop "%" a b) b) b))
+(define (truncate-quotient-expr a b) (call (js-path "Math.trunc") (binop "/" a b)))
+(define (truncate-remainder-expr a b) (binop "%" a b))
+(define (floor-quotient-expr a b) (call (js-path "Math.floor") (binop "/" a b)))
+(define (floor-remainder-expr a b) (binop "%" (binop "+" (binop "%" a b) b) b))
+
+(define-primitive! '(quotient truncate-quotient) 2 2
+  (simple-compiler truncate-quotient-expr))
+
+(define-primitive! '(remainder truncate-remainder) 2 2
+  (simple-compiler truncate-remainder-expr))
+
+(define-primitive! 'floor-quotient 2 2
+  (simple-compiler floor-quotient-expr))
 
 (define-primitive! '(modulo floor-remainder) 2 2
-  (simple-compiler floor-remainder)
+  (simple-compiler floor-remainder-expr)
   #:dup 'all)
-
-(define-inline floor-quotient (a b) (call (js-path "Math.floor") (binop "/" a b)))
-(define-inline truncate-quotient (a b) (call (js-path "Math.trunc") (binop "/" a b)))
-(define-inline truncate-remainder (a b) (binop "%" a b))
 
 ;; Two values (an array).
-(define-primitive! 'floor/ 2 2
-  (simple-compiler
-   (lambda (a b)
-     `(array ,(call (js-path "Math.floor") (binop "/" a b)) ,(floor-remainder a b))))
-  #:dup 'all)
-
 (define-primitive! 'truncate/ 2 2
   (simple-compiler
-   (lambda (a b)
-     `(array ,(call (js-path "Math.trunc") (binop "/" a b)) ,(binop "%" a b))))
+   (lambda (a b) `(array ,(truncate-quotient-expr a b) ,(truncate-remainder-expr a b))))
+  #:dup 'all)
+
+(define-primitive! 'floor/ 2 2
+  (simple-compiler
+   (lambda (a b) `(array ,(floor-quotient-expr a b) ,(floor-remainder-expr a b))))
   #:dup 'all)
 
 (define-js-function! 'abs "Math.abs")
@@ -590,10 +592,7 @@
 
 (define-primitive! 'round 1 1
   (simple-compiler round-to-even)
-  #:dup 'all
-  #:value (lambda (fresh)
-            (let ((x (fresh "x")))
-              (arrow (list x) (round-to-even `(id ,x))))))
+  #:dup 'all)
 (define-js-function! 'truncate "Math.trunc")
 (define-js-function! 'max "Math.max")
 (define-js-function! 'min "Math.min")
@@ -630,12 +629,13 @@
 
 (define-primitive! 'string->number 1 2
   (lambda (args til fresh)
+    (define (decimal s)
+      `(ternary ,(method decimal-number-regex "test" s) ,(call '(id "Number") s) (bool #f)))
     (match args
-      ((s)
-       `(ternary ,(method decimal-number-regex "test" s) ,(call '(id "Number") s) (bool #f)))
+      ((s) (decimal s))
       ((s radix)
        (match (and (const? (second til)) (const-exp (second til)))
-         (10 `(ternary ,(method decimal-number-regex "test" s) ,(call '(id "Number") s) (bool #f)))
+         (10 (decimal s))
          ((? (lambda (r) (and (exact-integer? r) (<= 2 r 36))) r)
           `(ternary ,(method (radix-number-regex r) "test" s) ,(call '(id "parseInt") s radix)
                     (bool #f)))
@@ -649,6 +649,7 @@
 (define (typeof-check type)
   (lambda (x) (binop "===" (unop "typeof " x) (str type))))
 
+(define-inline number? (x) ((typeof-check "number") x))
 (define-inline (string? symbol? keyword? char?) (x) ((typeof-check "string") x))
 (define-inline boolean? (x) ((typeof-check "boolean") x))
 (define-inline procedure? (x) ((typeof-check "function") x))
@@ -980,20 +981,21 @@
 ;; JavaScript interoperability
 ;;
 
+;; obj.a.b for the KEYS (compiled, and KEYS-TIL in Tree-IL) a and b.
+(define (member-path obj keys keys-til)
+  (fold (lambda (key key-til obj) (member-access obj key key-til))
+        obj keys keys-til))
+
 ;; (js-ref obj 'a 'b) => obj.a.b
 (define-primitive! 'js-ref 2 #f
   (lambda (args til fresh)
-    (fold (lambda (key key-til obj) (member-access obj key key-til))
-          (car args) (cdr args) (cdr til))))
+    (member-path (car args) (cdr args) (cdr til))))
 
 ;; (js-set! obj 'a 'b value) => obj.a.b = value
 (define-primitive! 'js-set! 3 #f
   (lambda (args til fresh)
-    (let ((keys (drop-right (cdr args) 1))
-          (keys-til (drop-right (cdr til) 1)))
-      `(assign ,(fold (lambda (key key-til obj) (member-access obj key key-til))
-                      (car args) keys keys-til)
-               ,(last args)))))
+    `(assign ,(member-path (car args) (drop-right (cdr args) 1) (drop-right (cdr til) 1))
+             ,(last args))))
 
 ;; (js-invoke obj 'method arg ...) => obj.method(arg, ...)
 (define-primitive! 'js-invoke 2 #f
