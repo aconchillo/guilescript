@@ -345,12 +345,17 @@
 (define (lexical-ref-to? x gensym)
   (and (lexical-ref? x) (eq? (lexical-ref-gensym x) gensym)))
 
+(define (toplevel-ref-to? x name)
+  (and (toplevel-ref? x) (eq? (toplevel-ref-name x) name)))
+
 ;; A reference to the Guile procedure NAME (not redefined by the user).
 (define (named-ref? x name)
-  (or (and (toplevel-ref? x)
-           (eq? (toplevel-ref-name x) name)
-           (not (user-defined? name)))
+  (or (and (toplevel-ref-to? x name) (not (user-defined? name)))
       (and (module-ref? x) (eq? (module-ref-name x) name))))
+
+;; A call to the Guile procedure NAME.
+(define (named-call? x name)
+  (and (call? x) (named-ref? (call-proc x) name)))
 
 (define (macro-definition? exp)
   (and (primcall? exp) (eq? (primcall-name exp) 'make-syntax-transformer)))
@@ -363,30 +368,24 @@
 ;;   (call-with-deferred-observers
 ;;     (lambda () (module-export! (current-module) '(a b))))
 (define (export-form-names x)
-  (and (call? x)
-       (named-ref? (call-proc x) 'call-with-deferred-observers)
+  (and (named-call? x 'call-with-deferred-observers)
        (match (call-args x)
          (((? lambda? thunk))
           (let ((clause (lambda-body thunk)))
             (and (lambda-case? clause)
                  (let ((body (lambda-case-body clause)))
-                   (and (call? body)
-                        (named-ref? (call-proc body) 'module-export!)
+                   (and (named-call? body 'module-export!)
                         (match (call-args body)
                           ((_ (? const? names)) (const-exp names))
                           (_ #f)))))))
          (_ #f))))
 
 (define (js-import-form? x)
-  (and (call? x)
-       (toplevel-ref? (call-proc x))
-       (eq? (toplevel-ref-name (call-proc x)) 'js-import)))
+  (and (call? x) (toplevel-ref-to? (call-proc x) 'js-import)))
 
 ;; (js-global name ...) declares JavaScript globals.
 (define (js-global-form? x)
-  (and (call? x)
-       (toplevel-ref? (call-proc x))
-       (eq? (toplevel-ref-name (call-proc x)) 'js-global)))
+  (and (call? x) (toplevel-ref-to? (call-proc x) 'js-global)))
 
 (define (global-form-names x)
   (map (lambda (arg)
@@ -396,18 +395,18 @@
          (toplevel-ref-name arg))
        (call-args x)))
 
-;; Calls that throw: (error msg irritant ...), (raise obj).
-(define (throw-call? x)
-  (and (call? x)
-       (or (named-ref? (call-proc x) 'error)
-           (named-ref? (call-proc x) 'throw)
-           (named-ref? (call-proc x) 'raise)
-           (named-ref? (call-proc x) 'raise-exception))))
+;; Calls that throw: (error msg irritant ...) and (throw key arg ...) throw
+;; an Error, (raise obj) throws OBJ. Returns error, raise or #f.
+(define (throw-call-kind x)
+  (cond
+   ((or (named-call? x 'error) (named-call? x 'throw)) 'error)
+   ((or (named-call? x 'raise) (named-call? x 'raise-exception)) 'raise)
+   (else #f)))
 
 ;; guard expands into (%js-try (lambda () body ...) (lambda (e) handler ...)),
 ;; see (language guilescript prelude).
 (define (try-call? x)
-  (and (call? x) (named-ref? (call-proc x) '%js-try)))
+  (named-call? x '%js-try))
 
 ;; The bodies of the functions given to %js-try, which are inlined.
 (define (try-bodies x)
@@ -455,20 +454,24 @@
 ;; (call-with-values producer consumer). receive, let-values, etc. expand
 ;; into it.
 (define (call-with-values? x)
-  (and (call? x)
-       (named-ref? (call-proc x) 'call-with-values)
+  (and (named-call? x 'call-with-values)
        (= 2 (length (call-args x)))))
+
+;; A lambda-case with only required arguments (and a rest argument if
+;; REST-OK?).
+(define* (simple-clause? clause #:optional rest-ok?)
+  (and (lambda-case? clause)
+       (not (lambda-case-alternate clause))
+       (not (lambda-case-opt clause))
+       (not (lambda-case-kw clause))
+       (or rest-ok? (not (lambda-case-rest clause)))))
 
 ;; The clause of a lambda with only required arguments and an optional rest
 ;; argument, or #f.
 (define (values-clause x)
   (and (lambda? x)
        (let ((clause (lambda-body x)))
-         (and (lambda-case? clause)
-              (not (lambda-case-alternate clause))
-              (not (lambda-case-opt clause))
-              (not (lambda-case-kw clause))
-              clause))))
+         (and (simple-clause? clause #t) clause))))
 
 ;; The body of PRODUCER if it's a thunk literal, or #f.
 (define (thunk-body producer)
@@ -514,11 +517,10 @@
 
 ;; (use-modules ...) expands into a call to process-use-modules.
 (define (use-modules-form? x)
-  (and (call? x) (named-ref? (call-proc x) 'process-use-modules)))
+  (named-call? x 'process-use-modules))
 
 (define (define-module-form? x)
-  (tree-any (lambda (y) (and (call? y) (named-ref? (call-proc y) 'define-module*)))
-            x))
+  (tree-any (cut named-call? <> 'define-module*) x))
 
 ;;
 ;; Guile bindings
@@ -608,8 +610,7 @@
 
 ;; (set! (f arg ...) value) expands to ((setter f) arg ... value). Returns f.
 (define (setter-target proc)
-  (and (call? proc)
-       (named-ref? (call-proc proc) 'setter)
+  (and (named-call? proc 'setter)
        (match (call-args proc)
          ((target) target)
          (_ #f))))
@@ -623,7 +624,7 @@
 (define (contains-await? x)
   (let walk ((x x))
     (cond
-     ((and (call? x) (named-ref? (call-proc x) 'js-await)) #t)
+     ((named-call? x 'js-await) #t)
      ((lambda? x) #f)
      (else (any walk (inline-children x))))))
 
@@ -792,17 +793,17 @@
 (define (target-ref? x target)
   (match target
     (('lexical . gensym) (lexical-ref-to? x gensym))
-    (('toplevel . name) (and (toplevel-ref? x) (eq? (toplevel-ref-name x) name)))))
+    (('toplevel . name) (toplevel-ref-to? x name))))
 
+;; Is TARGET referenced or assigned in X?
 (define (target-mentioned? x target)
-  (tree-any (lambda (y)
-              (or (target-ref? y target)
-                  (match target
-                    (('lexical . gensym)
-                     (and (lexical-set? y) (eq? (lexical-set-gensym y) gensym)))
-                    (('toplevel . name)
-                     (and (toplevel-set? y) (eq? (toplevel-set-name y) name))))))
-            x))
+  (match target
+    (('lexical . gensym) (references-any? x (list gensym)))
+    (('toplevel . name)
+     (tree-any (lambda (y)
+                 (or (toplevel-ref-to? y name)
+                     (and (toplevel-set? y) (eq? (toplevel-set-name y) name))))
+               x))))
 
 ;; Number of self tail calls to TARGET in BODY, or #f if TARGET is
 ;; referenced in any other way (e.g. non-tail calls, used as a value or
@@ -847,13 +848,6 @@
         (else
          (no-refs! x)
          0))))))
-
-(define (simple-clause? clause)
-  (and (lambda-case? clause)
-       (not (lambda-case-alternate clause))
-       (not (lambda-case-opt clause))
-       (not (lambda-case-rest clause))
-       (not (lambda-case-kw clause))))
 
 ;; A named let (or a single internal function only called right away) whose
 ;; function only calls itself in tail position:
@@ -1109,9 +1103,7 @@
        (let* ((name (toplevel-define-name form))
               (defs (take-while toplevel-define? forms))
               (result (destructured-values (map toplevel-define-exp defs)
-                                           (lambda (x)
-                                             (and (toplevel-ref? x)
-                                                  (eq? (toplevel-ref-name x) name))))))
+                                           (cut toplevel-ref-to? <> name))))
          (match result
            ((n . rest?)
             (let* ((unit (current-unit))
@@ -1303,15 +1295,13 @@
 ;; variable after them.
 (define (destructured-values vals tmp-ref?)
   (define (values-ref x)
-    (and (call? x)
-         (named-ref? (call-proc x) '%js-values-ref)
+    (and (named-call? x '%js-values-ref)
          (match (call-args x)
            (((? tmp-ref?) (? const? vars) (? const? var))
             (cons (const-exp vars) (const-exp var)))
            (_ #f))))
   (define (values-rest? x vars)
-    (and (call? x)
-         (named-ref? (call-proc x) '%js-values-rest)
+    (and (named-call? x '%js-values-rest)
          (match (call-args x)
            (((? tmp-ref?) (? const? rest-vars)) (equal? (const-exp rest-vars) vars))
            (_ #f))))
@@ -1427,7 +1417,7 @@
         (module-ref? x) (primitive-ref? x) (lambda? x))
     #t)
    ((call? x)
-    (and (not (throw-call? x))
+    (and (not (throw-call-kind x))
          (not (try-call? x))
          (expression-like? (call-proc x))
          (every expression-like? (call-args x))))
@@ -1554,7 +1544,7 @@
      ((try-call? x) (compile-try args ctx acc))
      ((and (call-with-values? x) (values-clause (cadr args)))
       (compile-stmt (compile-values-bindings! args acc) ctx acc))
-     ((throw-call? x) (compile-throw x acc))
+     ((throw-call-kind x) => (lambda (kind) (compile-throw kind args acc)))
      (else (deliver! ctx (compile-value x acc) acc)))))
 
 ;;
@@ -1620,32 +1610,27 @@
 (define (compile-try args ctx acc)
   (match args
     (((? lambda? thunk) (? lambda? handler))
-     (let ((body (lambda-body thunk))
+     (let ((body (thunk-body thunk))
            (catch (lambda-body handler)))
-       (unless (and (simple-clause? body) (null? (lambda-case-req body))
-                    (simple-clause? catch) (= 1 (length (lambda-case-req catch))))
+       (unless (and body (simple-clause? catch) (= 1 (length (lambda-case-req catch))))
          (compile-error "invalid guard"))
        (let ((body-acc (new-acc))
              (catch-acc (new-acc)))
-         (compile-stmt (lambda-case-body body) ctx body-acc)
+         (compile-stmt body ctx body-acc)
          (let ((name (bind! (car (lambda-case-gensyms catch)) (car (lambda-case-req catch)))))
            (compile-stmt (lambda-case-body catch) ctx catch-acc)
            (emit! acc `(try ,(acc-stmts body-acc) ,name ,(acc-stmts catch-acc)))))))
     (_ (compile-error "invalid guard"))))
 
-(define (compile-throw x acc)
-  (let ((args (call-args x)))
-    (if (or (named-ref? (call-proc x) 'error) (named-ref? (call-proc x) 'throw))
-        (let ((exprs (compile-exprs args acc)))
-          (emit! acc `(throw (new (id "Error")
-                                  ,(match exprs
-                                     (() '(str "error"))
-                                     ((msg) msg)
-                                     (_ `(call (dot (array ,@exprs) "join")
-                                               (str " "))))))))
-        (match (compile-exprs args acc)
-          ((obj) (emit! acc `(throw ,obj)))
-          (_ (compile-error "raise expects one argument"))))))
+;; KIND is error or raise (see throw-call-kind).
+(define (compile-throw kind args acc)
+  (match (cons kind (compile-exprs args acc))
+    (('error) (emit! acc '(throw (new (id "Error") (str "error")))))
+    (('error msg) (emit! acc `(throw (new (id "Error") ,msg))))
+    (('error . exprs)
+     (emit! acc `(throw (new (id "Error") (call (dot (array ,@exprs) "join") (str " "))))))
+    (('raise obj) (emit! acc `(throw ,obj)))
+    (_ (compile-error "raise expects one argument"))))
 
 ;;
 ;; Loops
@@ -2135,9 +2120,10 @@
   (let ((proc (call-proc x))
         (args (call-args x)))
     (cond
-     ((throw-call? x)
-      (compile-throw x acc)
-      '(undefined))
+     ((throw-call-kind x)
+      => (lambda (kind)
+           (compile-throw kind args acc)
+           '(undefined)))
      ((try-call? x)
       (via-temporary acc (lambda (t) (compile-try args `(assign . ,t) acc))))
      ((call-with-values? x)
