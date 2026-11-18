@@ -36,8 +36,8 @@
 ;;   FRESH  a procedure that returns a fresh JavaScript variable name
 ;;
 ;; Arguments listed in DUP are used more than once in the result, so the
-;; compiler makes sure they are simple (variables or literals) before
-;; calling the primitive compiler.
+;; compiler makes sure they are simple (variables, literals, functions or
+;; property accesses) before calling the primitive compiler.
 ;;
 ;; A few primitives need a helper function (e.g. equal? needs isEqual to
 ;; compare arrays). Helpers are added to the modules that use them.
@@ -102,7 +102,7 @@
             (if (list? names) names (list names))))
 
 ;;
-;; Helpers
+;; Helper functions added to the compiled modules (e.g. isEqual)
 ;;
 
 ;; A procedure that returns the JavaScript variable of a helper (and adds
@@ -140,7 +140,7 @@
                  (return (binop "===" (id "a") (id "b"))))))))
 
 ;;
-;; Helpers
+;; Building and inspecting the JavaScript AST
 ;;
 
 ;; "Math.max" => (dot (id "Math") "max")

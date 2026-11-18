@@ -31,8 +31,8 @@
   #:export (guilescript))
 
 ;;;
-;;; Language definition. For now, this is currently exactly the same as the
-;;; Scheme language definition.
+;;; Language definition. Like the Scheme language definition, except that
+;;; define-module and use-modules forms are rewritten when they are read.
 ;;;
 
 (define-language guilescript

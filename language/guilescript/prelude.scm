@@ -121,9 +121,10 @@
 ;;
 ;; is compiled into:
 ;;
-;;   const tmp = divMod(7, 2);
-;;   const q = tmp[0];
-;;   const r = tmp[1];
+;;   const [q, r] = divMod(7, 2);
+;;
+;; The compiler finds the definitions made by this macro (see
+;; destructured-values in (language javascript decompile-tree-il)).
 
 (define-syntax define-values
   (syntax-rules ()

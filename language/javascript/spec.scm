@@ -19,7 +19,7 @@
 
 ;;; Commentary:
 
-;; GuileScript language definition
+;; JavaScript language definition: Tree-IL is decompiled into JavaScript.
 
 ;;; Code:
 

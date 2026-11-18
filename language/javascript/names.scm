@@ -172,14 +172,15 @@
            (else (string-append "-u" (number->string (char->integer c) 16) "-"))))
         (string->list s))))
 
-;; Convert a Scheme identifier (symbol or string) into a JavaScript
-;; identifier. With #:property? #t the result is used as a property name, so
-;; reserved words are left untouched.
+;; <point> is a type name (a class).
 (define (type-name? s)
   (and (> (string-length s) 2)
        (string-prefix? "<" s)
        (string-suffix? ">" s)))
 
+;; Convert a Scheme identifier (symbol or string) into a JavaScript
+;; identifier. With #:property? #t the result is used as a property name, so
+;; reserved words are left untouched.
 (define* (scheme->js-name name #:key (property? #f))
   (let ((s (if (symbol? name) (symbol->string name) name)))
     (if (type-name? s)
