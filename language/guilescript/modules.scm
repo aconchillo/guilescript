@@ -45,6 +45,7 @@
   #:use-module (srfi srfi-1)
   #:use-module (srfi srfi-9)
   #:use-module (srfi srfi-11)
+  #:use-module ((language javascript errors) #:select (compile-error-at))
   #:export (make-module-context
             module-context-path
             module-context-dependencies
@@ -74,9 +75,6 @@
 (define (module-context-dependencies ctx)
   (reverse (%module-context-dependencies ctx)))
 
-(define (module-error src fmt . args)
-  (throw 'guilescript-error (apply format #f fmt args) src))
-
 (define (module-name? x)
   (and (pair? x) (every symbol? x)))
 
@@ -97,7 +95,7 @@
          (parts (map symbol->string name))
          (dirs (drop-right parts 1)))
     (unless (string=? (basename file ".gs") (last parts))
-      (module-error src "the module ~s should be in a file named ~a.gs" name (last parts)))
+      (compile-error-at src "the module ~s should be in a file named ~a.gs" name (last parts)))
     (set-module-context-name! ctx name)
     (set-module-context-root!
      ctx
@@ -106,7 +104,7 @@
          (() dir)
          ((d . rest)
           (unless (string=? (basename dir) d)
-            (module-error src "the module ~s should be in the directory ~a"
+            (compile-error-at src "the module ~s should be in the directory ~a"
                           name (string-join dirs "/")))
           (lp (dirname dir) rest)))))))
 
@@ -171,7 +169,7 @@
   (match spec
     ((? module-name? name) name)
     (((? module-name? name) . _) name)
-    (_ (module-error src "invalid module specification ~s" spec))))
+    (_ (compile-error-at src "invalid module specification ~s" spec))))
 
 ;; The names imported by SPEC from a GuileScript module exporting EXPORTS:
 ;; ((EXPORTED-NAME . LOCAL-NAME) ...)
@@ -185,13 +183,13 @@
                             (map (match-lambda
                                    ((? symbol? s) (cons s s))
                                    (((? symbol? orig) . (? symbol? local)) (cons orig local))
-                                   (other (module-error src "invalid #:select entry ~s" other)))
+                                   (other (compile-error-at src "invalid #:select entry ~s" other)))
                                  select)
                             (map (lambda (s) (cons s s)) exports))))
            (for-each (match-lambda
                        ((orig . _)
                         (unless (memq orig exports)
-                          (module-error src "`~a' is not exported by ~s" orig name))))
+                          (compile-error-at src "`~a' is not exported by ~s" orig name))))
                      imports)
            (map (match-lambda
                   ((orig . local)
@@ -201,7 +199,7 @@
         ((#:prefix (? symbol? p) . rest) (lp rest select p))
         ((#:version _ . rest) (lp rest select prefix))
         ((option . _)
-         (module-error src "~s is not supported when importing GuileScript modules" option))))))
+         (compile-error-at src "~s is not supported when importing GuileScript modules" option))))))
 
 ;; Forms importing the modules in SPECS.
 (define (import-forms ctx specs src)
@@ -237,7 +235,7 @@
       (((or #:declarative? #:duplicates #:version) _ . rest)
        (lp rest specs exports))
       ((option . _)
-       (module-error src "define-module option ~s is not supported" option)))))
+       (compile-error-at src "define-module option ~s is not supported" option)))))
 
 ;; The (begin form ...) FORM as a syntax object with the source location of
 ;; X (also in its forms, which become top-level forms).

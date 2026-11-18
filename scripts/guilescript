@@ -86,18 +86,6 @@ Compile GuileScript files into JavaScript.
                (call-with-output-string
                  (lambda (p) (print-exception p #f key args)))))))))
 
-;; Call THUNK and return its values followed by the source map mappings of the
-;; compiled code (or #f if SOURCE-MAP? is false).
-(define (call-with-mappings source-map? thunk)
-  (let ((mappings #f))
-    (call-with-values
-        (lambda ()
-          (parameterize ((current-mappings-receiver
-                          (and source-map? (lambda (m) (set! mappings m)))))
-            (thunk)))
-      (lambda results
-        (apply values (append results (list mappings)))))))
-
 (define (source-content file)
   (call-with-input-file file get-string-all))
 
@@ -139,12 +127,16 @@ Compile GuileScript files into JavaScript.
 
 ;; Compile FILES, and the GuileScript modules they import, into OUTPUT-DIR.
 (define (compile-project files output-dir load-path source-map?)
+  ;; The output file of the module PATH (e.g. "app/util"). Its directory is
+  ;; created, since relative-file-path needs it.
+  (define (output-file path)
+    (let ((output (string-append output-dir "/" path ".js")))
+      (mkdir-p (dirname output))
+      output))
   (for-each
    (match-lambda
      ((path js source-map)
-      (let ((output (string-append output-dir "/" path ".js")))
-        (mkdir-p (dirname output))
-        (write-js output js source-map))))
+      (write-js (output-file path) js source-map)))
    (call-with-compile-errors (car files)
      (lambda ()
        (compile-modules files
@@ -153,9 +145,7 @@ Compile GuileScript files into JavaScript.
                         ;; The map is next to the compiled file.
                         #:source-map-source
                         (lambda (file path)
-                          (let ((output (string-append output-dir "/" path ".js")))
-                            (mkdir-p (dirname output))
-                            (relative-file-path (dirname output) file))))))))
+                          (relative-file-path (dirname (output-file path)) file)))))))
 
 (define (main args)
   (let* ((options (catch 'misc-error

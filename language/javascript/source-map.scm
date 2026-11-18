@@ -32,12 +32,25 @@
   #:use-module (srfi srfi-1)
   #:use-module (language javascript print)
   #:export (current-mappings-receiver
+            call-with-mappings
             source-map-json
             base64-encode))
 
 ;; A procedure that receives the mappings of the compiled code, or #f if no
 ;; source map is needed.
 (define current-mappings-receiver (make-parameter #f))
+
+;; Call THUNK, which compiles code, and return its values followed by the
+;; source map mappings of the compiled code (or #f if SOURCE-MAP? is false).
+(define (call-with-mappings source-map? thunk)
+  (let ((mappings #f))
+    (call-with-values
+        (lambda ()
+          (parameterize ((current-mappings-receiver
+                          (and source-map? (lambda (m) (set! mappings m)))))
+            (thunk)))
+      (lambda results
+        (apply values (append results (list mappings)))))))
 
 (define base64-digits
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")

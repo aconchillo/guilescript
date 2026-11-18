@@ -108,21 +108,19 @@
                (key (canonicalize-path file)))
           (if (member key done)
               (lp (cdr pending) done results)
-              (let ((mappings #f))
-                (call-with-values
-                    (lambda ()
-                      (parameterize ((current-mappings-receiver
-                                      (and source-map? (lambda (m) (set! mappings m)))))
-                        (compile-module-file file #:load-path load-path)))
-                  (lambda (js path dependencies)
-                    (lp (append (cdr pending) (map cdr dependencies))
-                        (cons key done)
-                        (cons (list path
-                                    js
-                                    (and mappings
-                                         (source-map-json
-                                          mappings
-                                          #:file (string-append (basename path) ".js")
-                                          #:source (source-map-source file path)
-                                          #:content (call-with-input-file file get-string-all))))
-                              results))))))))))
+              (call-with-values
+                  (lambda ()
+                    (call-with-mappings source-map?
+                      (lambda () (compile-module-file file #:load-path load-path))))
+                (lambda (js path dependencies mappings)
+                  (lp (append (cdr pending) (map cdr dependencies))
+                      (cons key done)
+                      (cons (list path
+                                  js
+                                  (and mappings
+                                       (source-map-json
+                                        mappings
+                                        #:file (string-append (basename path) ".js")
+                                        #:source (source-map-source file path)
+                                        #:content (call-with-input-file file get-string-all))))
+                            results)))))))))

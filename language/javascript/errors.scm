@@ -28,6 +28,7 @@
 (define-module (language javascript errors)
   #:use-module (ice-9 format)
   #:export (compile-error
+            compile-error-at
             compile-warning
             call-with-source-file
             user-location?
@@ -62,8 +63,13 @@
   (when (user-location? src)
     (fluid-set! %location src)))
 
+;; A compilation error at the source location SRC.
+(define (compile-error-at src fmt . args)
+  (throw 'guilescript-error (apply format #f fmt args) src))
+
+;; A compilation error at the most recent location seen by the compiler.
 (define (compile-error fmt . args)
-  (throw 'guilescript-error (apply format #f fmt args) (current-location)))
+  (apply compile-error-at (current-location) fmt args))
 
 (define (compile-warning loc fmt . args)
   (format (current-warning-port) "~a: warning: ~a~%"
