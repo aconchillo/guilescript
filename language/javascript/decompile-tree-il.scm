@@ -619,18 +619,13 @@
           call-with-values))
 
 ;; Does X use js-await, not counting nested functions (which would be async
-;; themselves)? Inlined loops are not functions.
+;; themselves)?
 (define (contains-await? x)
   (let walk ((x x))
     (cond
      ((and (call? x) (named-ref? (call-proc x) 'js-await)) #t)
-     ((try-call? x) (any walk (try-bodies x)))
-     ((call-with-values? x) (any walk (call-with-values-bodies x)))
      ((lambda? x) #f)
-     ((and (letrec? x) (inline-loop? x))
-      (or (any walk (call-args (letrec-body x)))
-          (walk (lambda-case-body (lambda-body (car (letrec-vals x)))))))
-     (else (any walk (children x))))))
+     (else (any walk (inline-children x))))))
 
 ;; A function using js-await is compiled into an async function.
 (define (async-lambda? x)
@@ -845,7 +840,7 @@
         ((and (letrec? x) (inline-loop? x))
          ;; The body of an inlined loop is in tail position.
          (for-each no-refs! (call-args (letrec-body x)))
-         (walk (lambda-case-body (lambda-body (car (letrec-vals x))))))
+         (walk (lambda-case-body (inline-loop-clause x))))
         ((letrec? x)
          (for-each no-refs! (letrec-vals x))
          (walk (letrec-body x)))
@@ -888,6 +883,10 @@
             #t)))
     (_ #f)))
 
+;; The function of an inlined loop: (lambda (i ...) body).
+(define (inline-loop-clause x)
+  (lambda-body (car (letrec-vals x))))
+
 ;; The direct subexpressions of X.
 (define (children x)
   (cond
@@ -913,19 +912,26 @@
    ((abort? x) (append (list (abort-tag x)) (abort-args x) (list (abort-tail x))))
    (else '())))
 
+;; The subexpressions of X that are compiled into the same JavaScript
+;; function as X. The bodies of the functions given to %js-try and
+;; call-with-values, and inlined loops, are compiled inline (they are not
+;; functions).
+(define (inline-children x)
+  (cond
+   ((try-call? x) (try-bodies x))
+   ((call-with-values? x) (call-with-values-bodies x))
+   ((and (letrec? x) (inline-loop? x))
+    (append (call-args (letrec-body x))
+            (list (lambda-case-body (inline-loop-clause x)))))
+   (else (children x))))
+
 ;; Does any function inside BODY capture one of GENSYMS? If so, loop
-;; variables need a fresh binding on each iteration. Inlined loops are not
-;; functions.
+;; variables need a fresh binding on each iteration.
 (define (captures-any? body gensyms)
   (let walk ((x body))
-    (cond
-     ((try-call? x) (any walk (try-bodies x)))
-     ((call-with-values? x) (any walk (call-with-values-bodies x)))
-     ((lambda? x) (references-any? x gensyms))
-     ((and (letrec? x) (inline-loop? x))
-      (or (any walk (call-args (letrec-body x)))
-          (walk (lambda-case-body (lambda-body (car (letrec-vals x)))))))
-     (else (any walk (children x))))))
+    (if (lambda? x)
+        (references-any? x gensyms)
+        (any walk (inline-children x)))))
 
 (define-record-type <loop>
   (make-loop target vars label)
@@ -1631,7 +1637,7 @@
 
 (define (compile-inline-loop x ctx acc)
   (let* ((gensym (car (letrec-gensyms x)))
-         (clause (lambda-body (car (letrec-vals x))))
+         (clause (inline-loop-clause x))
          (req (lambda-case-req clause))
          (gensyms (lambda-case-gensyms clause))
          (body (lambda-case-body clause))
