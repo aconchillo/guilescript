@@ -102,6 +102,7 @@ EXTRA_DIST = \
 	vite-plugin-guilescript/index.js \
 	vite-plugin-guilescript/package.json \
 	examples/basic/fibonacci-server.scm \
+	examples/basic/fibonacci-server.w \
 	examples/task-manager/README.md \
 	examples/task-manager/react/index.html \
 	examples/task-manager/react/package-lock.json \

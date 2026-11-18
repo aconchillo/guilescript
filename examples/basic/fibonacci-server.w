@@ -9,11 +9,15 @@
 ;;
 ;; If you are building from source, compile with make, then run with:
 ;;
-;;    ./env wisp examples/fibonacci-server.w
+;;    ./env wisp examples/basic/fibonacci-server.w
 ;;
 ;; If GuileScript is already installed, compile with make, then run with:
 ;;
-;;    wisp examples/fibonacci-server.w
+;;    wisp examples/basic/fibonacci-server.w
+;;
+;; Guile 3.0.10 or later can also run it without the wisp command:
+;;
+;;    guile --language=wisp -s examples/basic/fibonacci-server.w
 ;;
 
 use-modules : (language guilescript compile) #:prefix gs:
@@ -30,15 +34,17 @@ use-modules : (language guilescript compile) #:prefix gs:
 ;;
 define js-fibonacci
   ' begin
+      js-global document alert
+
       define (fib n)
         if (<= n 1)
            . 1
            + (fib (- n 2)) (fib (- n 1))
 
-      define (computeFibonacci)
-        let ((elem (js-invoke document 'getElementById "number"))
-             (n (js-ref elem 'value)))
-          alert (+ "Fibonacci of " n " is " (fib n))
+      ;; computeFibonacci() in JavaScript.
+      define (compute-fibonacci)
+        let ((n (string->number (.-value (.get-element-by-id document "number")))))
+          alert (string-append "Fibonacci of " (number->string n) " is " (number->string (fib n)))
 
 
 define js-script

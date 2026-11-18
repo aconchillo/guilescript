@@ -386,7 +386,8 @@ Everything is described in the [reference](doc/reference.md).
 ## Examples
 
 - [`examples/basic`](examples/basic): small programs, and a Guile web server
-  with GuileScript code (`fibonacci-server.scm`).
+  with GuileScript code (`fibonacci-server.scm`, and the same server written in
+  [wisp](https://www.draketo.de/software/wisp) in `fibonacci-server.w`).
 
 - [`examples/vite`](examples/vite): a minimal Vite project.
 
