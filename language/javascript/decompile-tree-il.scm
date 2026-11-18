@@ -1165,20 +1165,12 @@
      ((hashq-ref (unit-emitted unit) name #f)
       ;; A redefinition is just an assignment.
       (compile-assignment! js exp acc))
-     ((and (eq? (record-call-kind exp) 'type) (not mutable?))
-      (hashq-set! (unit-emitted unit) name #t)
-      (emit! acc (wrap (compile-record-class js exp))))
-     ((and (record-call-kind exp) (not mutable?))
-      ;; Calls to record procedures are inlined, so they are only defined
-      ;; if they are exported or used as values.
-      (hashq-set! (unit-emitted unit) name #t)
-      (when (or export? (value-ref? name))
-        (emit! acc (wrap (compile-record-function js exp acc)))))
      (else
       (hashq-set! (unit-emitted unit) name #t)
-      (if (and (lambda? exp) (not mutable?))
-          (emit! acc (wrap (compile-function-declaration js exp `(toplevel . ,name))))
-          (compile-declaration! (if mutable? "let" "const") js exp acc wrap))))))
+      (unless (and (not mutable?)
+                   (compile-constant-binding! js exp `(toplevel . ,name)
+                                              (or export? (value-ref? name)) acc wrap))
+        (compile-declaration! (if mutable? "let" "const") js exp acc wrap))))))
 
 ;; (js-import "module" [#:default Name] [#:as Name] name ...)
 (define (compile-import x)
@@ -1225,6 +1217,25 @@
 ;; Bindings
 ;;
 
+;; Bind NAME, a variable that is never assigned, to X if X is a function
+;; (a function declaration) or a record definition (a class, or a function
+;; for record procedures). Calls to record procedures are inlined, so they
+;; are only defined if NEEDED? (exported or used as values). Returns #f if
+;; X is none of these. WRAP is applied to the statement (e.g. to export it).
+(define (compile-constant-binding! name x target needed? acc wrap)
+  (cond
+   ((lambda? x)
+    (emit! acc (wrap (compile-function-declaration name x target)))
+    #t)
+   ((eq? (record-call-kind x) 'type)
+    (emit! acc (wrap (compile-record-class name x)))
+    #t)
+   ((record-call-kind x)
+    (when needed?
+      (emit! acc (wrap (compile-record-function name x acc))))
+    #t)
+   (else #f)))
+
 (define* (compile-declaration! kind name x acc #:optional (wrap identity))
   (if (expression-like? x)
       (let ((e (compile-value x acc)))
@@ -1250,13 +1261,9 @@
 (define (compile-letrec-bindings! x acc)
   (define (compile-binding! gensym name val)
     (cond
-     ((and (lambda? val) (not (lexical-assigned? gensym)))
-      (emit! acc (compile-function-declaration name val `(lexical . ,gensym))))
-     ((and (eq? (record-call-kind val) 'type) (not (lexical-assigned? gensym)))
-      (emit! acc (compile-record-class name val)))
-     ((and (record-call-kind val) (not (lexical-assigned? gensym)))
-      (when (value-ref? gensym)
-        (emit! acc (compile-record-function name val acc))))
+     ((and (not (lexical-assigned? gensym))
+           (compile-constant-binding! name val `(lexical . ,gensym) (value-ref? gensym)
+                                      acc identity)))
      ((unused? gensym) (compile-stmt val 'effect acc))
      (else
       (compile-declaration! (binding-kind gensym) name val acc))))
