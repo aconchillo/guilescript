@@ -34,6 +34,7 @@
 ;;; Code:
 
 (define-module (language javascript names)
+  #:use-module (ice-9 string-fun)
   #:use-module (srfi srfi-1)
   #:export (scheme->js-name
             keyword->js-name
@@ -120,14 +121,6 @@
     (#\~ . "tilde") (#\^ . "caret") (#\. . "dot")
     (#\@ . "at") (#\# . "hash")))
 
-(define (string-replace-all s from to)
-  (let ((n (string-length from)))
-    (let lp ((start 0) (acc '()))
-      (let ((i (string-contains s from start)))
-        (if i
-            (lp (+ i n) (cons* to (substring s start i) acc))
-            (string-concatenate-reverse (cons (substring s start) acc)))))))
-
 (define (strip-earmuffs s)
   (let ((n (string-length s)))
     (if (and (> n 2)
@@ -196,7 +189,7 @@
          (s (strip-earmuffs s))
          (s (predicate->word s))
          (s (strip-bang s))
-         (s (string-replace-all s "->" "-to-"))
+         (s (string-replace-substring s "->" "-to-"))
          (s (spell-out-invalid-chars s))
          (words (remove string-null? (string-split s #\-)))
          (s (words->camel-case words))
