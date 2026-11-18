@@ -1659,15 +1659,26 @@
                       (compile-declaration! (binding-kind gensym) (bind! gensym name) init acc))
                     gensyms req inits)
           (compile-stmt body ctx acc))
-        (let* ((init-exprs (compile-exprs inits acc))
-               (vars (map-in-order declare-name! req))
-               (label (cons (declare-name! (car (letrec-names x))) #f))
-               (loop (make-loop target vars label))
-               (body-acc (new-acc)))
-          (for-each (lambda (var e) (emit! acc `(decl "let" ,var ,e))) vars init-exprs)
-          (bind-loop-variables! gensyms req vars body body-acc)
-          (compile-stmt body (cons loop ctx) body-acc)
-          (emit! acc `(while ,label ,(loop-body (acc-stmts body-acc))))))))
+        (let ((init-exprs (compile-exprs inits acc)))
+          (let-values (((vars while-stmt)
+                        (compile-loop target gensyms req (car (letrec-names x)) body ctx)))
+            (for-each (lambda (var e) (emit! acc `(decl "let" ,var ,e))) vars init-exprs)
+            (emit! acc while-stmt))))))
+
+;; Compile BODY, the body of the function TARGET with the parameters GENSYMS
+;; (named NAMES), into a while loop (labeled LABEL-NAME if needed) whose
+;; values are delivered to CTX. Returns the JavaScript variables of the
+;; parameters and the while statement.
+(define (compile-loop target gensyms names label-name body ctx)
+  (let* ((vars (map-in-order declare-name! names))
+         (label (cons (declare-name! label-name) #f))
+         (loop (make-loop target vars label))
+         (body-acc (new-acc)))
+    (bind-loop-variables! gensyms names vars body body-acc)
+    (compile-stmt body (cons loop ctx) body-acc)
+    ;; The label is only needed if a nested loop jumps to it.
+    (values vars
+            `(while ,(and (cdr label) (car label)) ,(loop-body (acc-stmts body-acc))))))
 
 ;; Loop variables are reassigned on each iteration. If they are captured by
 ;; a closure we need a fresh binding per iteration (like Scheme does).
@@ -1781,17 +1792,14 @@
              (simple-clause? clause)
              (positive? (or (count-tail-calls body target nreq) 0)))
         ;; A function that calls itself in tail position: a loop.
-        (let* ((vars (map-in-order declare-name! req))
-               (label (cons (declare-name! (match target
-                                             (('toplevel . name) name)
-                                             (('lexical . _) "loop")))
-                            #f))
-               (loop (make-loop target vars label))
-               (body-acc (new-acc)))
-          (bind-loop-variables! req-gensyms req vars body body-acc)
-          (compile-stmt body (cons loop 'return) body-acc)
+        (let-values (((vars while-stmt)
+                      (compile-loop target req-gensyms req
+                                    (match target
+                                      (('toplevel . name) name)
+                                      (('lexical . _) "loop"))
+                                    body 'return)))
           (values (map (lambda (var) `(param ,var)) vars)
-                  `((while ,label ,(loop-body (acc-stmts body-acc))))))
+                  (list while-stmt)))
         (let* ((req-params (map-in-order (lambda (gensym name) `(param ,(bind! gensym name)))
                                          req-gensyms req))
                (opt-params (map-in-order (lambda (gensym name init)

@@ -47,8 +47,7 @@
 ;;   (continue LABEL) (throw E) (try STMTS NAME STMTS) (export STMT)
 ;;   (export-names NAMES) (import FROM DEFAULT NAMESPACE NAMES)
 ;;
-;; E, LABEL, the else STMTS and DEFAULT can be #f. The label of a while loop
-;; is a pair (NAME . USED?) and it is only printed if USED? is true.
+;; E, LABEL, the else STMTS and DEFAULT can be #f.
 
 ;;; Code:
 
@@ -410,7 +409,7 @@
        (string-append pad (if-statement s indent) "\n"))
       (('while label body)
        (string-append pad
-                      (if (and label (cdr label)) (string-append (car label) ": ") "")
+                      (if label (string-append label ": ") "")
                       "while (true) " (block body indent) "\n"))
       (((and keyword (or 'break 'continue)) label)
        (string-append pad (symbol->string keyword) (if label (string-append " " label) "")
