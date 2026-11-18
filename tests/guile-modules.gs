@@ -9,7 +9,8 @@
              (ice-9 match)
              ((srfi srfi-1) #:select ((fold . srfi:fold) iota))
              ((srfi srfi-1) #:prefix s1:)
-             ((guile) #:select ((+ . plus) (odd? . odd-number?))))
+             ((guile) #:select ((+ . plus) (odd? . odd-number?)))
+             (tests guile-modules))
 
 (console-log (map (cut * 2 <>) '(1 2 3)))
 ;; => [ 2, 4, 6 ]
@@ -21,6 +22,10 @@
 ;; given to other procedures.
 (console-log (plus 1 2) (srfi:fold plus 0 (iota 4)) (filter odd-number? (iota 5)))
 ;; => 3 6 [ 1, 3 ]
+
+;; Macros from your own Guile modules (tests/guile-modules.scm).
+(console-log (twice (+ 1 2)))
+;; => [ 3, 3 ]
 
 ;; Pattern matching with (ice-9 match).
 (define (describe x)

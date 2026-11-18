@@ -247,11 +247,19 @@
                       (cons 'begin (map (lambda (f) (datum->syntax x f #:source src)) forms))
                       #:source src)))))
 
+;; Was X (a syntax object) read from the file being compiled? Guile modules
+;; loaded while compiling it (e.g. with macros) can also be read by the
+;; GuileScript reader: Guile compiles them with the current language.
+(define (in-compiled-file? ctx x)
+  (match (syntax-source x)
+    (#f #f)
+    (src (equal? (assq-ref src 'filename) (module-context-file ctx)))))
+
 ;; Rewrite a top-level form read from a GuileScript file (see Commentary).
 ;; X is a syntax object.
 (define (transform-module-form x)
   (let ((ctx (current-module-context)))
-    (if (or (not ctx) (eof-object? x))
+    (if (or (not ctx) (eof-object? x) (not (in-compiled-file? ctx x)))
         x
         (match (syntax->datum x)
           (('define-module (? module-name? name) . options)
