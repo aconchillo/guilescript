@@ -74,10 +74,12 @@
 ;;
 
 (define-record-type <unit>
-  (make-unit env bindings defined assigned exports imported js-names
-             lexical-assigned inline-loops emitted gensym-names scopes form-scope
-             records value-refs aliases preferred-names renamed generated-names
-             stmt-locations ref-counts helper-names used-helpers name-kinds)
+  (make-unit env exports scopes
+             ;; The other fields are hash tables.
+             bindings defined assigned imported js-names lexical-assigned
+             inline-loops emitted gensym-names form-scope records value-refs
+             aliases preferred-names renamed generated-names stmt-locations
+             ref-counts helper-names used-helpers name-kinds)
   unit?
   (env unit-env)                        ; module where the code was expanded
   (bindings unit-bindings)              ; name -> Guile binding (memoized)
@@ -120,14 +122,8 @@
 (define current-unit (make-parameter #f))
 
 (define (new-unit env)
-  (make-unit env (make-hash-table)
-             (make-hash-table) (make-hash-table) '() (make-hash-table)
-             (make-hash-table) (make-hash-table) (make-hash-table)
-             (make-hash-table) (make-hash-table) (list (make-hash-table))
-             (make-hash-table) (make-hash-table) (make-hash-table)
-             (make-hash-table) (make-hash-table) (make-hash-table)
-             (make-hash-table) (make-hash-table) (make-hash-table)
-             (make-hash-table) (make-hash-table) (make-hash-table)))
+  (apply make-unit env '() (list (make-hash-table))
+         (list-tabulate 21 (lambda (_) (make-hash-table)))))
 
 (define (user-defined? name)
   (let ((unit (current-unit)))
