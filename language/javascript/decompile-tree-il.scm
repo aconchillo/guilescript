@@ -1681,13 +1681,6 @@
                 gensyms names vars)
       (for-each set-gensym-name! gensyms vars)))
 
-(define (js-mentions? e name)
-  (let walk ((e e))
-    (cond
-     ((and (pair? e) (eq? (car e) 'id) (pair? (cdr e)) (equal? (cadr e) name)) #t)
-     ((pair? e) (or (walk (car e)) (walk (cdr e))))
-     (else #f))))
-
 (define (compile-loop-continue loop args ctx acc)
   (let* ((exprs (compile-exprs args acc))
          (changes (filter-map (lambda (var e)
@@ -1705,7 +1698,8 @@
       (let ((ready (find (lambda (change)
                            (not (any (lambda (other)
                                        (and (not (eq? other change))
-                                            (js-mentions? (cdr other) (car change))))
+                                            (tree-contains? (cut equal? <> `(id ,(car change)))
+                                                            (cdr other))))
                                      pending)))
                          pending)))
         (if ready
@@ -1905,13 +1899,13 @@
               (call-with (lambda (n)
                            (let ((args (map (lambda (p) `(id ,p)) (list-head params n))))
                              ((primitive-compiler prim) args (map (const #f) args) declare-name!)))))
-         `(arrow ,(map (lambda (p) `(param ,p)) params)
-                 ((return ,(let lp ((n (primitive-min-args prim)))
-                             (if (= n (length params))
-                                 (call-with n)
-                                 `(ternary (binop "===" (id ,(list-ref params n)) (undefined))
-                                           ,(call-with n)
-                                           ,(lp (+ n 1))))))))))))))
+         (arrow params
+                (let lp ((n (primitive-min-args prim)))
+                  (if (= n (length params))
+                      (call-with n)
+                      `(ternary (binop "===" (id ,(list-ref params n)) (undefined))
+                                ,(call-with n)
+                                ,(lp (+ n 1))))))))))))
 
 (define (toplevel-value x)
   (let ((name (toplevel-ref-name x)))
@@ -1923,7 +1917,7 @@
            (call-with-function-scope
             (lambda ()
               (let ((obj (declare-name! "obj")))
-                `(arrow ((param ,obj)) ((return (dot (id ,obj) ,prop)))))))))
+                (arrow (list obj) `(dot (id ,obj) ,prop)))))))
      ((method-ref x)
       ;; .method as a value: (obj, ...args) => obj.method(...args)
       => (lambda (method)
@@ -2110,11 +2104,9 @@
              (lp (cdr args) (cons (car args) positional)))))
       ((arg . rest) (lp rest (cons arg positional))))))
 
+;; The arguments of (apply f arg ... list): f(arg, ..., ...list).
 (define (spread-args exprs)
-  (append (drop-right exprs 1)
-          (match (last exprs)
-            (('array . elts) elts)
-            (e `((spread ,e))))))
+  (append (drop-right exprs 1) (array-elements (last exprs))))
 
 (define (compile-call-value x acc)
   (let ((proc (call-proc x))
@@ -2132,11 +2124,11 @@
           ;; The values (an array) are the arguments of the consumer.
           (match (compile-exprs args acc)
             ((producer consumer)
-             (call-function consumer
-                            (match (producer-value (car args) producer)
-                              ((? (const (single-producer? (car args))) e) (list e))
-                              (('array . elts) elts)
-                              (e `((spread ,e)))))))))
+             (let ((value (producer-value (car args) producer)))
+               (call-function consumer
+                              (if (single-producer? (car args))
+                                  (list value)
+                                  (array-elements value))))))))
      ((primitive-for proc)
       => (lambda (prim) (compile-primitive-call prim args acc)))
      ((named-ref? proc 'apply) (compile-apply args acc))
@@ -2237,10 +2229,8 @@
         ((f . exprs) (call-function f (spread-args exprs))))))))
 
 (define (check-primitive-arity prim argc)
-  (let ((min (primitive-min-args prim))
-        (max (primitive-max-args prim)))
-    (when (or (< argc min) (and max (> argc max)))
-      (compile-error "wrong number of arguments to `~a'" (primitive-name prim)))))
+  (unless (primitive-arity-ok? prim argc)
+    (compile-error "wrong number of arguments to `~a'" (primitive-name prim))))
 
 (define (compile-primitive-call prim args acc)
   (check-primitive-arity prim (length args))

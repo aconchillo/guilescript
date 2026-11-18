@@ -53,6 +53,7 @@
   #:use-module (srfi srfi-9)
   #:use-module (srfi srfi-26)
   #:export (lookup-primitive
+            primitive-arity-ok?
             primitive-name
             primitive-min-args
             primitive-max-args
@@ -68,7 +69,10 @@
             boolean-expr?
             current-boolean-name?
             truth
-            substitute))
+            substitute
+            tree-contains?
+            arrow
+            array-elements))
 
 (define-record-type <primitive>
   (make-primitive name min max dup compiler value helpers)
@@ -94,6 +98,11 @@
       (#f '())
       ('all (iota argc))
       ((? list? indices) indices))))
+
+;; Can PRIM be called with ARGC arguments?
+(define (primitive-arity-ok? prim argc)
+  (and (<= (primitive-min-args prim) argc)
+       (or (not (primitive-max-args prim)) (<= argc (primitive-max-args prim)))))
 
 (define* (define-primitive! names min max compiler #:key dup value (helpers '()))
   (for-each (lambda (name)
@@ -264,11 +273,9 @@
                      ((toplevel-ref? f-til) (toplevel-ref-name f-til))
                      ((module-ref? f-til) (module-ref-name f-til))
                      (else #f)))
-              (prim (and name (lookup-primitive name)))
-              (argc (length args)))
+              (prim (and name (lookup-primitive name))))
          (and prim
-              (<= (primitive-min-args prim) argc)
-              (or (not (primitive-max-args prim)) (<= argc (primitive-max-args prim)))
+              (primitive-arity-ok? prim (length args))
               ((primitive-compiler prim) args (map (const #f) args) fresh)))))
 
 ;; If F-TIL is a method (e.g. .toUpperCase) or a property (e.g. .-length)
