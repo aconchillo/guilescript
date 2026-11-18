@@ -495,7 +495,10 @@ macro, to write HTML elements with an SXML-like syntax instead of JSX:
 or a component if it's like `<task-item>`. Property names are camelCase
 (`#:class-name` is `className`). Values and children are strings, numbers,
 variables, elements or `,expression` (any expression, e.g. a list of
-elements). The code above compiles into:
+elements). `(<> child ...)` is a fragment, like in JSX: it's the same as
+`(<fragment> child ...)`, so `<fragment>` must be defined (e.g. imported
+from React with `(js-import "react" <fragment>)`). The code above compiles
+into:
 
 ```javascript
 function TaskItem(props) {

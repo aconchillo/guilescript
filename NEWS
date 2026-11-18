@@ -55,6 +55,7 @@
   - New (guilescript html) module: the html macro writes HTML elements with
     an SXML-like syntax (instead of JSX). It calls h (hyperscript), so it
     works with React, Preact or any library with such a function.
+    (<> child ...) is a fragment, like in JSX.
 
   - compile-modules compiles GuileScript files and the modules they import
     from Guile programs (e.g. a web server). -L directories are also

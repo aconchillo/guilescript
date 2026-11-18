@@ -287,6 +287,9 @@ How it works:
   JavaScript), used like tags: `(<todo-list>)`. They receive the
   properties as an object: `(.-title props)`.
 
+- `(<> child ...)` is a fragment, like `<>...</>` in JSX. Import
+  `<fragment>` from React to use it: `(js-import "react" <fragment>)`.
+
 - Hooks are imported from React like any other function. `define-values`
   takes the two values that `use-state` returns, like `const [todos,
   setTodos] = useState([])`.

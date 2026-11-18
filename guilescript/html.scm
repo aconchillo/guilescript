@@ -51,6 +51,10 @@
 ;;   (e.g. li), or a component if it's like <task-title> (the TaskTitle
 ;;   function in JavaScript).
 ;;
+;; - (<> child ...) is a fragment, like in JSX: it's the same as
+;;   (<fragment> child ...), so <fragment> must be defined (e.g. imported
+;;   from React with (js-import "react" <fragment>)).
+;;
 ;; - Properties are keywords followed by a value. Keywords become camelCase
 ;;   names (e.g. #:class-name is className and #:on-click is onClick).
 ;;
@@ -84,10 +88,14 @@
                    (keyword? (syntax->datum #'k))
                    (lp #'more (append properties (list #'k (value #'v)))))
                   ((child ...)
-                   (with-syntax ((type (if (component? #'tag)
-                                           #'tag
-                                           (datum->syntax #'tag (symbol->string
-                                                                 (syntax->datum #'tag)))))
+                   (with-syntax ((type (cond
+                                        ((eq? (syntax->datum #'tag) '<>)
+                                         (datum->syntax #'tag '<fragment>
+                                                        #:source (syntax-source #'tag)))
+                                        ((component? #'tag) #'tag)
+                                        (else
+                                         (datum->syntax #'tag (symbol->string
+                                                               (syntax->datum #'tag))))))
                                  ((property ...) properties)
                                  ((child ...) (map value #'(child ...)))
                                  (h h)

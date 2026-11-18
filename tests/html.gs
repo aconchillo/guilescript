@@ -35,6 +35,12 @@
 (show (html (<task-item> #:done done #:count ,(+ 1 2) 42)))
 ;; => {"type":"TaskItem","properties":{"done":true,"count":3},"children":[42]}
 
+;; (<> child ...) is a fragment: (<fragment> child ...).
+(define (<fragment> properties) #f)
+
+(show (html (<> (li "a") (li "b"))))
+;; => {"type":"Fragment","properties":null,"children":[{"type":"li","properties":null,"children":["a"]},{"type":"li","properties":null,"children":["b"]}]}
+
 ;; Nested elements.
 (show (html (div (h1 "Title") (p #:on-click ,(lambda () #t) "text"))))
 ;; => {"type":"div","properties":null,"children":[{"type":"h1","properties":null,"children":["Title"]},{"type":"p","properties":{},"children":["text"]}]}
