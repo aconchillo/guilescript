@@ -405,9 +405,12 @@ expands the macros and compiles it into
 intermediate language. GuileScript then compiles Tree-IL into a small
 JavaScript syntax tree, which is printed as JavaScript.
 
-I started GuileScript because Guile is a lot of fun, and I wanted to do the
-[cool things people do with ClojureScript](https://twitter.com/zaneshelby/status/1477988369154121734?s=20)
-with Guile.
+## History
+
+I started GuileScript in 2022 because Guile is a lot of fun, but it stayed a
+prototype: I never found the time to take it further, and I thought I might
+come back to it when I retire. In 2026 I rewrote it with the help of a coding
+agent (Claude Code), which made it possible to do it now instead.
 
 ## Hacking
 
