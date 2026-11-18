@@ -681,14 +681,11 @@
         (called (make-hash-table))
         (ref-counts (unit-ref-counts (current-unit)))
         (copies '()))
-    ;; References in call position.
-    (tree-il-fold (lambda (y seed)
-                    (when (call? y) (hashq-set! called (call-proc y) #t))
-                    seed)
-                  (lambda (y seed) seed)
-                  #f x)
     (tree-il-fold
      (lambda (y seed)
+       ;; References in call position (calls are seen before their
+       ;; procedure) are not values.
+       (when (call? y) (hashq-set! called (call-proc y) #t))
        (cond
         ((hashq-ref called y) #t)
         ((toplevel-ref? y) (hashq-set! (unit-value-refs unit) (toplevel-ref-name y) #t))
