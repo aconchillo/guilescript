@@ -213,11 +213,13 @@
   (eq? (hash-ref (unit-name-kinds (current-unit)) js #f) 'predicate))
 
 ;; Variables introduced by macros have names like t-14f049806a705a7e-16.
+(define generated-suffix-regexp
+  (make-regexp "^(.+?)(-[0-9a-f]{12,}(-[0-9a-f]+)*)$"))
+
 (define (strip-generated-suffix name)
-  (let ((s (symbol->string name)))
-    (match (string-match "^(.+?)(-[0-9a-f]{12,}(-[0-9a-f]+)*)$" s)
-      (#f name)
-      (m (string->symbol (match:substring m 1))))))
+  (match (regexp-exec generated-suffix-regexp (symbol->string name))
+    (#f name)
+    (m (string->symbol (match:substring m 1)))))
 
 (define (generated-name? name)
   (not (eq? name (strip-generated-suffix name))))
