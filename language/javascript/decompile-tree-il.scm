@@ -1724,15 +1724,14 @@
 
 (define (compile-function-declaration name x target)
   (let-values (((params body) (compile-lambda x target)))
-    (if (async-lambda? x)
-        `(async-fun-decl ,name ,params ,body)
-        `(fun-decl ,name ,params ,body))))
+    (async-if-needed x `(fun-decl ,name ,params ,body))))
 
 (define (compile-lambda-expression x)
   (let-values (((params body) (compile-lambda x #f)))
-    (if (async-lambda? x)
-        `(async (arrow ,params ,body))
-        `(arrow ,params ,body))))
+    (async-if-needed x `(arrow ,params ,body))))
+
+(define (async-if-needed x f)
+  (if (async-lambda? x) `(async ,f) f))
 
 ;; Returns the parameters and the body statements of a function.
 (define (compile-lambda x target)

@@ -40,8 +40,8 @@
 ;;
 ;; Statements:
 ;;
-;;   (expr-stmt E) (decl KIND NAME E) (fun-decl NAME PARAMS STMTS)
-;;   (async-fun-decl NAME PARAMS STMTS) (decl-array KIND NAMES REST E)
+;;   (expr-stmt E) (decl KIND NAME E) (decl-array KIND NAMES REST E)
+;;   (fun-decl NAME PARAMS STMTS) (async FUN-DECL)
 ;;   (class NAME ((constructor PARAMS STMTS)))
 ;;   (return E) (if T STMTS STMTS) (while LABEL STMTS) (break LABEL)
 ;;   (continue LABEL) (throw E) (try STMTS NAME STMTS) (block STMTS) (export STMT)
@@ -416,9 +416,6 @@
                                               (block body (+ indent 1)) "\n")))
                             members))
                       pad "}\n"))
-      (('async-fun-decl name params body)
-       (string-append pad "async function " name (parameters params indent) " "
-                      (block body indent) "\n"))
       (('return value)
        (string-append pad "return" (if value (string-append " " (expr value 0 indent)) "")
                       ";\n"))
@@ -439,6 +436,8 @@
                       " catch (" name ") " (block handler indent) "\n"))
       (('block body)
        (string-append pad (block body indent) "\n"))
+      (('async stmt)
+       (string-append pad "async " (string-trim-both (statement stmt indent)) "\n"))
       (('export stmt)
        (string-append pad "export " (string-trim-both (statement stmt indent)) "\n"))
       (('export-names names)
