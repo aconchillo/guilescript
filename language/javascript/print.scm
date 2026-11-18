@@ -24,14 +24,14 @@
 ;; Expressions:
 ;;
 ;;   (num N) (str S) (bool B) (null) (undefined) (id NAME) (this)
+;;   (regex PATTERN FLAGS)
 ;;   (array ELT ...)            ELT can be (spread E)
-;;   (object (KEY . E) ...)     KEY is a string or (computed E); an entry
-;;                              can also be (spread E)
+;;   (object (KEY . E) ...)     KEY is a string or (computed E)
 ;;   (call F ARG ...)           ARG can be (spread E)
 ;;   (new F ARG ...)
 ;;   (dot E NAME) (optional-dot E NAME) (index E E)
 ;;   (binop OP A B) (unop OP A) (ternary T A B) (assign TARGET E)
-;;   (function NAME PARAMS STMTS) (arrow PARAMS STMTS) (async ARROW)
+;;   (arrow PARAMS STMTS) (async ARROW)
 ;;
 ;; Parameters:
 ;;
@@ -44,7 +44,7 @@
 ;;   (fun-decl NAME PARAMS STMTS) (async FUN-DECL)
 ;;   (class NAME ((constructor PARAMS STMTS)))
 ;;   (return E) (if T STMTS STMTS) (while LABEL STMTS) (break LABEL)
-;;   (continue LABEL) (throw E) (try STMTS NAME STMTS) (block STMTS) (export STMT)
+;;   (continue LABEL) (throw E) (try STMTS NAME STMTS) (export STMT)
 ;;   (export-names NAMES) (import FROM DEFAULT NAMESPACE NAMES)
 ;;
 ;; E, LABEL, the else STMTS and DEFAULT can be #f. The label of a while loop
@@ -60,7 +60,6 @@
   #:use-module (language javascript names)
   #:export (print-js
             print-js-with-locations
-            print-js-expression
             js-string-literal))
 
 (define max-line-width 80)
@@ -153,6 +152,14 @@
 (define (comma-list items)
   (string-join items ", "))
 
+;; ITEMS between OPEN and CLOSE, one per line.
+(define (one-per-line open close items indent)
+  (string-append open "\n"
+                 (string-join (map (lambda (s) (string-append (indent-string (+ indent 1)) s))
+                                   items)
+                              ",\n")
+                 "\n" (indent-string indent) close))
+
 ;; Print a bracketed list of items, on a single line if it fits.
 (define (bracketed open close items indent pad?)
   (cond
@@ -163,27 +170,17 @@
     (if pad?
         (string-append open " " (comma-list items) " " close)
         (string-append open (comma-list items) close)))
-   (else
-    (string-append open "\n"
-                   (string-join (map (lambda (s)
-                                       (string-append (indent-string (+ indent 1)) s))
-                                     items)
-                                ",\n")
-                   "\n" (indent-string indent) close))))
+   (else (one-per-line open close items indent))))
 
 (define (member-object e indent)
   (match e
     (('num n) (string-append "(" (expr* e indent) ")"))
     (_ (expr e 17 indent))))
 
-(define (callee e indent)
-  (match e
-    (('function . _) (string-append "(" (expr* e indent) ")"))
-    (_ (expr e 17 indent))))
-
+;; new f()() is (new f())(), so the callee of new can't be a call.
 (define (new-callee e indent)
   (match e
-    ((or ('call . _) ('function . _)) (string-append "(" (expr* e indent) ")"))
+    (('call . _) (string-append "(" (expr* e indent) ")"))
     (_ (expr e 17 indent))))
 
 ;; Remove one level of indentation from the lines (except the first one) of
@@ -217,12 +214,7 @@
       (string-append "(" (comma-list (append (drop-right items 1)
                                               (list (dedent (last items)))))
                      ")"))
-     (else
-      (string-append "(\n"
-                     (string-join (map (lambda (s) (string-append (indent-string (+ indent 1)) s))
-                                       items)
-                                  ",\n")
-                     "\n" (indent-string indent) ")")))))
+     (else (one-per-line "(" ")" items indent)))))
 
 (define (last-line s)
   (match (string-rindex s #\newline)
@@ -248,18 +240,16 @@
      (bracketed "[" "]" (map (lambda (x) (element x (+ indent 1))) elts) indent #f))
     (('object . entries)
      (bracketed "{" "}"
-                (map (lambda (entry)
-                       (match entry
-                         (('spread x) (string-append "..." (expr x 2 (+ indent 1))))
-                         ((key . value)
-                          (if (equal? value `(id ,key))
-                              key       ; shorthand: { name }
-                              (string-append (property-key key (+ indent 1)) ": "
-                                             (expr value 2 (+ indent 1)))))))
+                (map (match-lambda
+                       ((key . value)
+                        (if (equal? value `(id ,key))
+                            key         ; shorthand: { name }
+                            (string-append (property-key key (+ indent 1)) ": "
+                                           (expr value 2 (+ indent 1))))))
                      entries)
                 indent #t))
     (('call f . args)
-     (let ((f (callee f indent)))
+     (let ((f (expr f 17 indent)))
        (string-append f (arguments args indent (string-length (last-line f))))))
     (('new f . args)
      (let ((f (string-append "new " (new-callee f indent))))
@@ -300,9 +290,6 @@
      (string-append (expr t 4 indent) " ? " (expr a 2 indent) " : " (expr b 2 indent)))
     (('assign target value)
      (string-append (expr target 17 indent) " = " (expr value 2 indent)))
-    (('function name params body)
-     (string-append "function" (if name (string-append " " name) "")
-                    (parameters params indent) " " (block body indent)))
     (('arrow params body)
      (string-append (parameters params indent) " => " (arrow-body body indent)))
     (('async f)
@@ -425,17 +412,14 @@
        (string-append pad
                       (if (and label (cdr label)) (string-append (car label) ": ") "")
                       "while (true) " (block body indent) "\n"))
-      (('break label)
-       (string-append pad "break" (if label (string-append " " label) "") ";\n"))
-      (('continue label)
-       (string-append pad "continue" (if label (string-append " " label) "") ";\n"))
+      (((and keyword (or 'break 'continue)) label)
+       (string-append pad (symbol->string keyword) (if label (string-append " " label) "")
+                      ";\n"))
       (('throw e)
        (string-append pad "throw " (expr e 0 indent) ";\n"))
       (('try body name handler)
        (string-append pad "try " (block body indent)
                       " catch (" name ") " (block handler indent) "\n"))
-      (('block body)
-       (string-append pad (block body indent) "\n"))
       (('async stmt)
        (string-append pad "async " (string-trim-both (statement stmt indent)) "\n"))
       (('export stmt)
@@ -522,6 +506,3 @@
              (else
               (write-char c out)
               (lp (+ i 1) line (+ column (if (> (char->integer c) #xffff) 2 1)) mappings))))))))
-
-(define (print-js-expression e)
-  (expr e 0 0))

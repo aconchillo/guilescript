@@ -216,7 +216,7 @@
   (let walk ((e e))
     (match e
       (('id (? (cut equal? <> name))) 1)
-      (((or 'arrow 'function) . _) (if in-functions? (walk (cdr e)) 0))
+      (((or 'arrow 'async) . _) (if in-functions? (walk (cdr e)) 0))
       ((a . b) (+ (walk a) (walk b)))
       (_ 0))))
 
@@ -251,7 +251,7 @@
      (if (and (function-with-arity? f (length args))
               (every simple-argument? args)
               (not (tree-contains? (match-lambda
-                                     (((or 'arrow 'function 'assign) . _) #t)
+                                     (((or 'arrow 'async 'assign) . _) #t)
                                      (_ #f))
                                    body)))
          (substitute body (map (lambda (p a) (cons (cadr p) a)) params args))
@@ -374,7 +374,7 @@
 (define (truth e)
   (match e
     ((? boolean-expr?) e)
-    ((or ('num _) ('str _) ('arrow . _) ('function . _)) '(bool #t))
+    ((or ('num _) ('str _) ('arrow . _) ('async . _)) '(bool #t))
     ((or ('null) ('undefined)) '(bool #f))
     ((? variable-access?)
      `(binop "&&" (binop "!=" ,e (null)) (binop "!==" ,e (bool #f))))
@@ -387,7 +387,7 @@
     (match e
       (('return #f) e)
       (('return v) `(return ,(truth v)))
-      (((or 'arrow 'function 'async 'fun-decl 'class) . _) e)
+      (((or 'arrow 'async 'fun-decl 'class) . _) e)
       ((a . b) (cons (walk a) (walk b)))
       (_ e))))
 

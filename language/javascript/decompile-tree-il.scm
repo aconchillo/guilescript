@@ -970,7 +970,7 @@
 (define (pure-expr? e)
   (match e
     ((or ('num _) ('str _) ('bool _) ('null) ('undefined) ('id _)
-         ('arrow . _) ('function . _) ('async . _))
+         ('arrow . _) ('async . _))
      #t)
     (_ #f)))
 
