@@ -39,6 +39,9 @@
 ;; compiler makes sure they are simple (variables, literals, functions or
 ;; property accesses) before calling the primitive compiler.
 ;;
+;; Multiple values are arrays (a single value is just the value), so the
+;; compiler needs to know which primitives return several values.
+;;
 ;; A few primitives need a helper function (e.g. equal? needs isEqual to
 ;; compare arrays). Helpers are added to the modules that use them.
 
@@ -61,6 +64,7 @@
             primitive-compiler
             primitive-value-builder
             primitive-helpers
+            primitive-single-value?
             current-helper-ref
             helper-js-name
             helper-definition
@@ -75,7 +79,7 @@
             array-elements))
 
 (define-record-type <primitive>
-  (make-primitive name min max dup compiler value helpers)
+  (make-primitive name min max dup compiler value helpers multiple-values)
   primitive?
   (name primitive-name)
   (min primitive-min-args)
@@ -83,7 +87,10 @@
   (dup primitive-dup)                   ; #f, 'all, list or procedure
   (compiler primitive-compiler)
   (value primitive-value-builder)       ; #f or (lambda (fresh) ...)
-  (helpers primitive-helpers))          ; helpers the primitive may use
+  (helpers primitive-helpers)           ; helpers the primitive may use
+  ;; Does it return several values? #f, #t or a procedure of the number of
+  ;; arguments.
+  (multiple-values primitive-multiple-values))
 
 (define primitives (make-hash-table))
 
@@ -104,10 +111,19 @@
   (and (<= (primitive-min-args prim) argc)
        (or (not (primitive-max-args prim)) (<= argc (primitive-max-args prim)))))
 
-(define* (define-primitive! names min max compiler #:key dup value (helpers '()))
+;; Does a call to PRIM with ARGC arguments return a single value?
+(define (primitive-single-value? prim argc)
+  (match (primitive-multiple-values prim)
+    (#f #t)
+    (#t #f)
+    (multiple? (not (multiple? argc)))))
+
+(define* (define-primitive! names min max compiler
+           #:key dup value (helpers '()) (multiple-values #f))
   (for-each (lambda (name)
               (hashq-set! primitives name
-                          (make-primitive name min max dup compiler value helpers)))
+                          (make-primitive name min max dup compiler value helpers
+                                          multiple-values)))
             (if (list? names) names (list names))))
 
 ;;
@@ -581,12 +597,14 @@
 (define-primitive! 'truncate/ 2 2
   (simple-compiler
    (lambda (a b) `(array ,(truncate-quotient-expr a b) ,(truncate-remainder-expr a b))))
-  #:dup 'all)
+  #:dup 'all
+  #:multiple-values #t)
 
 (define-primitive! 'floor/ 2 2
   (simple-compiler
    (lambda (a b) `(array ,(floor-quotient-expr a b) ,(floor-remainder-expr a b))))
-  #:dup 'all)
+  #:dup 'all
+  #:multiple-values #t)
 
 (define-js-function! 'abs "Math.abs")
 (define-js-function! 'ceiling "Math.ceil")
@@ -1044,7 +1062,24 @@
               `(arrow ((rest ,xs))
                       ((return (ternary (binop "===" (dot (id ,xs) "length") (num 1))
                                         (index (id ,xs) (num 0))
-                                        (id ,xs))))))))
+                                        (id ,xs)))))))
+  #:multiple-values (lambda (argc) (not (= argc 1))))
+
+;; define-values (see (language guilescript prelude)) defines each variable
+;; with (%js-values-ref values '(a b) 'b) => values[1], and the rest with
+;; (%js-values-rest values '(a b)) => values.slice(2).
+(define-primitive! '%js-values-ref 3 3
+  (lambda (args til fresh)
+    (match (list args til)
+      (((values _ _) (_ vars var))
+       `(index ,values
+               (num ,(list-index (cut eq? <> (const-exp var)) (const-exp vars))))))))
+
+(define-primitive! '%js-values-rest 2 2
+  (lambda (args til fresh)
+    (match (list args til)
+      (((values _) (_ vars))
+       (method values "slice" (num (length (const-exp vars))))))))
 
 ;;
 ;; Errors

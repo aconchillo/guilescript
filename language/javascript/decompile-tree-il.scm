@@ -485,19 +485,16 @@
 ;; single value is not: it must not be destructured, even if it's an array
 ;; or a string. (Calls to other procedures might return several values.)
 (define (single-value? x)
-  (define (values-call? name args)
-    (match name
-      ('values (= 1 (length args)))
-      ((or 'floor/ 'truncate/) #f)
-      (_ #t)))
   (cond
    ((or (const? x) (void? x) (lexical-ref? x) (toplevel-ref? x) (module-ref? x)
         (lambda? x) (lexical-set? x) (toplevel-set? x))
     #t)
    ((call? x)
     (let ((prim (primitive-for (call-proc x))))
-      (and prim (values-call? (primitive-name prim) (call-args x)))))
-   ((primcall? x) (values-call? (primcall-name x) (primcall-args x)))
+      (and prim (primitive-single-value? prim (length (call-args x))))))
+   ((primcall? x)
+    (let ((prim (lookup-primitive (primcall-name x))))
+      (or (not prim) (primitive-single-value? prim (length (primcall-args x))))))
    ((conditional? x)
     (and (single-value? (conditional-consequent x))
          (single-value? (conditional-alternate x))))
@@ -2146,15 +2143,6 @@
      ;; (Nested js-import and js-global are found by analyze-form!.)
      ((named-ref? proc 'process-use-modules)
       (compile-error "use-modules is only allowed at the top level"))
-     ((named-ref? proc '%js-values-ref)
-      (match args
-        ((values (? const? vars) (? const? var))
-         `(index ,(compile-value values acc)
-                 (num ,(list-index (cut eq? <> (const-exp var)) (const-exp vars)))))))
-     ((named-ref? proc '%js-values-rest)
-      (match args
-        ((values (? const? vars))
-         `(call (dot ,(compile-value values acc) "slice") (num ,(length (const-exp vars)))))))
      ((named-ref? proc 'js-await)
       (match args
         ((promise) `(unop "await " ,(compile-value promise acc)))
