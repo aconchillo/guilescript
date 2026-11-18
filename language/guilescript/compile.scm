@@ -43,12 +43,15 @@
   (parameterize ((current-warning-port (%make-void-port "w")))
     (thunk)))
 
-(define (compile exp)
+;; Compile into JavaScript the Tree-IL returned by (EXPAND ENV).
+(define (compile-to-javascript expand)
   (let ((env (default-environment 'guilescript)))
-    (system:decompile
-     (without-guile-warnings
-      (lambda () (system:compile exp #:from 'guilescript #:to 'tree-il #:env env)))
-     #:from 'tree-il #:to 'javascript #:env env)))
+    (system:decompile (without-guile-warnings (lambda () (expand env)))
+                      #:from 'tree-il #:to 'javascript #:env env)))
+
+(define (compile exp)
+  (compile-to-javascript
+   (lambda (env) (system:compile exp #:from 'guilescript #:to 'tree-il #:env env))))
 
 ;; Compile FILENAME into JavaScript. Returns the JavaScript code, the path of
 ;; the compiled module (without extension, e.g. "app/util" for the module
@@ -67,24 +70,21 @@
       (lambda () (set! %load-path saved-load-path)))))
 
 (define (compile-module-file* ctx filename)
-    (call-with-source-file filename
-      (lambda ()
-        (parameterize ((current-module-context ctx))
-          (call-with-input-file filename
-            (lambda (p)
-              (let* ((env (default-environment 'guilescript))
-                     (tree-il (without-guile-warnings
-                               (lambda ()
-                                 (system:read-and-compile p #:from 'guilescript #:to 'tree-il
-                                                          #:env env))))
-                     (js (call-with-values
-                             (lambda ()
-                               (system:decompile tree-il #:from 'tree-il #:to 'javascript
-                                                 #:env env))
-                           (lambda (js . _) js))))
+  (call-with-source-file filename
+    (lambda ()
+      (parameterize ((current-module-context ctx))
+        (call-with-input-file filename
+          (lambda (p)
+            (call-with-values
+                (lambda ()
+                  (compile-to-javascript
+                   (lambda (env)
+                     (system:read-and-compile p #:from 'guilescript #:to 'tree-il
+                                              #:env env))))
+              (lambda (js . _)
                 (values js
                         (module-context-path ctx)
-                        (module-context-dependencies ctx)))))))))
+                        (module-context-dependencies ctx))))))))))
 
 (define* (compile-file filename #:key (load-path '()) (source-imports? #f))
   (call-with-values (lambda () (compile-module-file filename #:load-path load-path
