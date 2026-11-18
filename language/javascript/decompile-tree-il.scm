@@ -998,9 +998,18 @@
     (when (and (pair? loops) (not (eq? base 'return)))
       (emit! acc (loop-jump 'break (last loops) ctx)))))
 
+;; Evaluate E into a temporary variable and return the variable.
 (define (hoist! e acc)
   (let ((t (declare-name! "t")))
     (emit! acc `(decl "const" ,t ,e))
+    `(id ,t)))
+
+;; Declare a temporary variable, call FILL! with its name (to emit the
+;; statements that assign it) and return the variable.
+(define (via-temporary acc fill!)
+  (let ((t (declare-name! "t")))
+    (emit! acc `(decl "let" ,t #f))
+    (fill! t)
     `(id ,t)))
 
 ;;
@@ -1972,10 +1981,7 @@
     (unsupported x))
    (else
     ;; Anything else needs statements (e.g. loops): use a temporary.
-    (let ((t (declare-name! "t")))
-      (emit! acc `(decl "let" ,t #f))
-      (compile-stmt x `(assign . ,t) acc)
-      `(id ,t)))))
+    (via-temporary acc (lambda (t) (compile-stmt x `(assign . ,t) acc))))))
 
 ;; Compile expressions left to right. If an expression needs statements, the
 ;; previous (non-simple) expressions are evaluated first into temporaries to
@@ -2025,21 +2031,26 @@
     (compile-test (seq-tail x) acc))
    ;; (if a b c) => a ? b : c, where b and c are tests too.
    ((and (conditional? x) (not (constant-truth (conditional-test x))))
-    (let* ((test (compile-test (conditional-test x) acc))
-           (then-acc (new-acc))
-           (else-acc (new-acc))
-           (then (compile-test (conditional-consequent x) then-acc))
-           (else (compile-test (conditional-alternate x) else-acc)))
-      (if (and (acc-empty? then-acc) (acc-empty? else-acc))
-          (boolean-ternary test then else)
-          (let ((t (declare-name! "t")))
-            (emit! acc `(decl "let" ,t #f))
-            (emit-if! test
-                      (append (acc-stmts then-acc) (assign-stmts t then))
-                      (append (acc-stmts else-acc) (assign-stmts t else))
-                      acc)
-            `(id ,t)))))
+    (compile-if-expression x compile-test acc))
    (else (truth (compile-value x acc)))))
+
+;; (if a b c) => a ? b : c, where b and c are compiled with COMPILE-BRANCH.
+;; If they need statements, the value is computed into a temporary.
+(define (compile-if-expression x compile-branch acc)
+  (let* ((test (compile-test (conditional-test x) acc))
+         (then-acc (new-acc))
+         (else-acc (new-acc))
+         (then (compile-branch (conditional-consequent x) then-acc))
+         (else (compile-branch (conditional-alternate x) else-acc)))
+    (if (and (acc-empty? then-acc) (acc-empty? else-acc))
+        (boolean-ternary test then else)
+        (via-temporary
+         acc
+         (lambda (t)
+           (emit-if! test
+                     (append (acc-stmts then-acc) (assign-stmts t then))
+                     (append (acc-stmts else-acc) (assign-stmts t else))
+                     acc))))))
 
 ;; test ? then : else, where TEST is a boolean (e.g. from compile-test).
 (define (boolean-ternary test then else)
@@ -2061,10 +2072,10 @@
             (b (compile-value b-x sub)))
        (cond
         ((not (acc-empty? sub))
-         (let ((t (declare-name! "t")))
-           (emit! acc `(decl "let" ,t #f))
-           (emit-if! test (assign-stmts t a) (append (acc-stmts sub) (assign-stmts t b)) acc)
-           `(id ,t)))
+         (via-temporary
+          acc
+          (lambda (t)
+            (emit-if! test (assign-stmts t a) (append (acc-stmts sub) (assign-stmts t b)) acc))))
         ((boolean-expr? a) `(binop "||" ,a ,b))
         (else `(ternary ,test ,a ,b)))))))
 
@@ -2072,21 +2083,7 @@
   (match (constant-truth (conditional-test x))
     ('true (compile-value (conditional-consequent x) acc))
     ('false (compile-value (conditional-alternate x) acc))
-    (_
-     (let* ((test (compile-test (conditional-test x) acc))
-            (then-acc (new-acc))
-            (else-acc (new-acc))
-            (then (compile-value (conditional-consequent x) then-acc))
-            (else (compile-value (conditional-alternate x) else-acc)))
-       (if (and (acc-empty? then-acc) (acc-empty? else-acc))
-           (boolean-ternary test then else)
-           (let ((t (declare-name! "t")))
-             (emit! acc `(decl "let" ,t #f))
-             (emit-if! test
-                       (append (acc-stmts then-acc) (assign-stmts t then))
-                       (append (acc-stmts else-acc) (assign-stmts t else))
-                       acc)
-             `(id ,t)))))))
+    (_ (compile-if-expression x compile-value acc))))
 
 ;;
 ;; Calls
@@ -2127,10 +2124,7 @@
       (compile-throw x acc)
       '(undefined))
      ((try-call? x)
-      (let ((t (declare-name! "t")))
-        (emit! acc `(decl "let" ,t #f))
-        (compile-try args `(assign . ,t) acc)
-        `(id ,t)))
+      (via-temporary acc (lambda (t) (compile-try args `(assign . ,t) acc))))
      ((call-with-values? x)
       (if (values-clause (cadr args))
           (compile-value (compile-values-bindings! args acc) acc)
