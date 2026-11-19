@@ -38,6 +38,9 @@ exec ${GUILE:-guile} -e "(@@ (guilescript) main)" -s "$0" "$@"
   #:use-module (language javascript errors)
   #:use-module (language javascript source-map))
 
+;; The same as in configure.ac (make dist checks it).
+(define guilescript-version "1.0.0")
+
 (define (usage port)
   (display "Usage: guilescript [OPTION]... FILE...
 
@@ -54,7 +57,16 @@ Compile GuileScript files into JavaScript.
       --source-imports   import GuileScript modules by the path of their
                          .gs file (e.g. ./util.gs), for bundler plugins
   -h, --help             display this help and exit
+      --version          display version information and exit
 " port))
+
+(define (display-version)
+  (format #t "guilescript (GuileScript) ~a
+Copyright (C) 2022-2026 Aleix Conchillo Flaque
+License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+" guilescript-version))
 
 (define option-spec
   '((output (single-char #\o) (value #t))
@@ -62,7 +74,8 @@ Compile GuileScript files into JavaScript.
     (load-path (single-char #\L) (value #t))
     (source-map (value #f))
     (source-imports (value #f))
-    (help (single-char #\h) (value #f))))
+    (help (single-char #\h) (value #f))
+    (version (value #f))))
 
 (define (fail fmt . args)
   (apply format (current-error-port) fmt args)
@@ -161,6 +174,9 @@ Compile GuileScript files into JavaScript.
                                 options)))
     (when (option-ref options 'help #f)
       (usage (current-output-port))
+      (exit 0))
+    (when (option-ref options 'version #f)
+      (display-version)
       (exit 0))
     (match (option-ref options '() '())
       ((? pair? files)

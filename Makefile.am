@@ -123,3 +123,11 @@ EXTRA_DIST = \
 	examples/vite/src/counter.gs \
 	examples/vite/src/main.gs \
 	examples/vite/vite.config.js
+
+# The versions of the guilescript command and of the Vite plugin must be the
+# package's.
+dist-hook:
+	@grep -q '(define guilescript-version "$(PACKAGE_VERSION)")' $(srcdir)/scripts/guilescript || \
+	  { echo "scripts/guilescript: the version is not $(PACKAGE_VERSION)" >&2; exit 1; }
+	@grep -q '"version": "$(PACKAGE_VERSION)"' $(srcdir)/vite-plugin-guilescript/package.json || \
+	  { echo "vite-plugin-guilescript/package.json: the version is not $(PACKAGE_VERSION)" >&2; exit 1; }

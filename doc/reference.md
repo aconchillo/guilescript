@@ -41,6 +41,8 @@ $ guilescript [OPTION]... FILE...
   file (e.g. `./util.gs`) instead of the compiled `.js` file, for bundler
   plugins.
 
+- `-h`, `--help`: show the options. `--version`: show the version.
+
 ## Source maps
 
 With `--source-map`, GuileScript also generates source maps (`app.js.map`
