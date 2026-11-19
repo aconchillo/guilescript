@@ -50,6 +50,7 @@
             module-context-path
             module-context-dependencies
             current-module-context
+            current-exports-cache
             transform-module-form
             relative-file-path))
 
@@ -116,9 +117,21 @@
              (and (file-exists? file) file)))
          (cons (module-context-root ctx) (module-context-load-path ctx)))))
 
+;; A hash table with the exports of the files already read while compiling
+;; several files (see compile-modules), or #f.
+(define current-exports-cache (make-parameter #f))
+
 ;; The names exported by the GuileScript module in FILE. The file is only
 ;; read (not run).
 (define (module-exports file)
+  (let ((cache (current-exports-cache)))
+    (or (and cache (hash-ref cache file))
+        (let ((exports (read-module-exports file)))
+          (when cache
+            (hash-set! cache file exports))
+          exports))))
+
+(define (read-module-exports file)
   (define (option-exports options)
     (match options
       (() '())

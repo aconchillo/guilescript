@@ -101,6 +101,12 @@
 ;; module). Source maps include the source code.
 (define* (compile-modules files #:key (load-path '()) (source-map? #f)
                           (source-map-source (lambda (file path) (basename file))))
+  ;; Modules are usually imported by several modules: read their exports
+  ;; only once (in this call, the files might change between calls).
+  (parameterize ((current-exports-cache (make-hash-table)))
+    (compile-modules* files load-path source-map? source-map-source)))
+
+(define (compile-modules* files load-path source-map? source-map-source)
   (let lp ((pending files) (done '()) (results '()))
     (if (null? pending)
         (reverse results)
