@@ -1,4 +1,119 @@
 
+* Version 1.0.0 (unreleased)
+
+  - New code generator: Tree-IL is compiled into a JavaScript AST which is
+    then printed. The output is readable modern JavaScript (const/let,
+    function declarations, arrow functions, if statements) instead of nested
+    immediately invoked functions.
+
+  - GuileScript now explicitly uses JavaScript data and semantics: lists and
+    vectors are arrays, symbols and characters are strings and hash tables
+    are Maps. JavaScript has no pairs, so quoted data is always made of
+    arrays and dotted pairs (e.g. quoted association lists) are a
+    compilation error: objects are created with js-obj, and assoc-ref reads
+    their properties.
+
+  - Like in Scheme, only #f, #nil and undefined are false: 0 and "" are
+    true. Tests that are not known to be booleans are compiled into
+    x != null && x !== false.
+
+  - Like in Scheme, equal? (and member, delete and delete-duplicates)
+    compares lists and vectors element by element. A small isEqual function
+    is added to the modules that need it.
+
+  - Scheme names are converted to camelCase JavaScript names (log-counter =>
+    logCounter, even? => isEven, set-x! => setX). Reserved words are
+    renamed and clashing names are a compilation error.
+
+  - Named let loops, do loops and functions calling themselves in tail
+    position are compiled into while loops.
+
+  - Fix #f (was null), quoted symbols, string escaping, internal definitions
+    (only the first one was kept), case and do.
+
+  - Support optional, rest and keyword arguments and case-lambda. Trailing
+    keyword arguments in calls become an options object.
+
+  - ES modules: js-import imports npm packages (or any module) and
+    define-public/export export definitions.
+
+  - Method call syntax: (.method obj arg ...) => obj.method(arg, ...).
+
+  - Property access syntax: (.-prop obj) => obj.prop. Properties (and js-ref
+    paths) can be assigned with set!.
+
+  - Many more built-in procedures (lists, strings, hash tables...) compiled
+    inline. New js-obj, js-typeof, js-instanceof and js-delete!. js-ref and
+    js-set! accept property paths.
+
+  - define-module: GuileScript modules (e.g. (app util) in app/util.gs) are
+    compiled into ES modules, and importing them (with define-module or
+    use-modules, also with #:select or #:prefix) imports the names they
+    export. New -d option to compile a file and all the GuileScript modules
+    it imports, and -L to add directories where modules are searched.
+
+  - New (guilescript html) module: the html macro writes HTML elements with
+    an SXML-like syntax (instead of JSX). It calls h (hyperscript), so it
+    works with React, Preact or any library with such a function.
+    (<> child ...) is a fragment, like in JSX.
+
+  - compile-modules compiles GuileScript files and the modules they import
+    from Guile programs (e.g. a web server). -L directories are also
+    searched for Guile modules (e.g. with macros).
+
+  - Warn about functions using js-await given to for-each (which doesn't
+    wait for them). (apply .method obj ... list) is compiled into
+    obj.method(..., ...list). Unused local variables are not declared, and
+    Guile's warnings while expanding (about Guile's semantics) are not
+    shown anymore.
+
+  - New example: a complete task manager (examples/task-manager), with a
+    Guile server (SQLite, JSON API) and the web page in GuileScript, with
+    and without React.
+
+  - Source maps: new --source-map option to generate source maps
+    (FILE.js.map next to the compiled files, or inline when writing to
+    stdout), so stack traces and developer tools point to the .gs files.
+    vite-plugin-guilescript generates them too.
+
+  - vite-plugin-guilescript: a Vite plugin to use .gs files in Vite
+    projects (see examples/vite). New --source-imports option to import
+    GuileScript modules by the path of their .gs file, for bundler plugins.
+
+  - js-import #:rename '((name . local-name) ...) to rename imported names.
+
+  - use-modules: macros from any Guile module can be used (e.g. match or
+    cut), and so can the procedures GuileScript compiles inline (also with
+    #:select or #:prefix). Other procedures from Guile modules are a
+    compilation error.
+
+  - Multiple values are arrays: (values a b) => [a, b]. receive,
+    let-values, let*-values, define-values and call-with-values are compiled
+    into array destructuring.
+
+  - define-record-type (R7RS, SRFI-9) is compiled into a JavaScript class,
+    and calls to the record procedures into JavaScript expressions (e.g.
+    (point-x p) => p.x).
+
+  - guard (R7RS) is compiled into try/catch. New error-object? and
+    error-object-message.
+
+  - js-await: functions using it are compiled into async functions (and it
+    is a top-level await at the top level of a module).
+
+  - Every name must be defined, imported, declared with js-global (e.g.
+    (js-global document)) or be a standard JavaScript global, so typos are
+    compilation errors. Unsupported Guile procedures (e.g. display) are
+    compilation errors too.
+
+  - Compilation errors and warnings with source locations. New -o option in
+    the guilescript command.
+
+  - Test suite (make check, needs Node.js).
+
+  - New README, for people new to Scheme too (with a React app made with
+    Vite), and a reference in doc/reference.md.
+
 * Version 0.2.0 (Jan 30, 2022)
 
   - Add initial macro support.

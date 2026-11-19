@@ -1,0 +1,118 @@
+/* Task manager styles, used by both examples (vanilla and React). */
+
+:root {
+  --text: #1f2328;
+  --muted: #656d76;
+  --border: #d0d7de;
+  --background: #f6f8fa;
+  --accent: #0969da;
+  --error: #cf222e;
+  font-family: system-ui, sans-serif;
+  color: var(--text);
+  background: var(--background);
+}
+
+body {
+  margin: 0;
+}
+
+.app {
+  max-width: 36rem;
+  margin: 3rem auto;
+  padding: 1.5rem;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+h1 {
+  margin-top: 0;
+}
+
+form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+input,
+button {
+  font: inherit;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+form input,
+.search {
+  flex: 1;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.search {
+  margin-top: 1rem;
+}
+
+button {
+  background: white;
+  cursor: pointer;
+}
+
+button[type="submit"],
+button.selected {
+  color: white;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.errors {
+  color: var(--error);
+  margin: 0.5rem 0 0;
+  padding-left: 1.2rem;
+}
+
+.tasks {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+}
+
+.task {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.task .title {
+  flex: 1;
+}
+
+.task.done .title {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.task .edit {
+  flex: 1;
+}
+
+.task .delete {
+  border: none;
+  color: var(--muted);
+}
+
+footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: var(--muted);
+}
+
+.filters {
+  display: flex;
+  gap: 0.25rem;
+}

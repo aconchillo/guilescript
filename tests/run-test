@@ -1,0 +1,106 @@
+#!/bin/sh
+#
+# Copyright (C) 2026 Aleix Conchillo Flaque <aconchillo@gmail.com>
+#
+# This file is part of GuileScript.
+#
+# GuileScript is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# GuileScript is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with GuileScript. If not, see https://www.gnu.org/licenses/.
+#
+# Usage: run-test FILE.gs
+#
+# Compiles FILE.gs into JavaScript and then:
+#
+#  - if FILE.gs has ";; error: TEXT" comments, the compilation must fail
+#    with an error message containing TEXT.
+#
+#  - if FILE.gs has ";; warning: TEXT" comments, the compilation must give a
+#    warning containing TEXT.
+#
+#  - if FILE.gs has ";; => OUTPUT" comments, the JavaScript code is run with
+#    Node.js and its output must be the OUTPUT lines.
+#
+#  - otherwise the JavaScript code must have valid syntax.
+#
+# FILE.gs and the GuileScript modules it imports are compiled (with -d and
+# --source-map) into ES modules, which are run with source maps enabled.
+# Exits with 77 (skip) if Node.js is not available.
+
+set -u
+
+file=$1
+srcdir=$(cd "$(dirname "$0")/.." && pwd)
+NODE=${NODE:-node}
+
+if ! command -v "$NODE" >/dev/null 2>&1; then
+  echo "SKIP: $NODE not found"
+  exit 77
+fi
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+GUILE_LOAD_PATH="$srcdir${GUILE_LOAD_PATH:+:$GUILE_LOAD_PATH}"
+export GUILE_LOAD_PATH
+
+mkdir "$tmp/out"
+echo '{ "type": "module" }' > "$tmp/out/package.json"
+js="$tmp/out/$(basename "$file" .gs).js"
+
+"$srcdir/scripts/guilescript" -d "$tmp/out" --source-map "$file" 2> "$tmp/stderr"
+status=$?
+cat "$tmp/stderr"
+
+if grep -q '^;; error:' "$file"; then
+  if [ $status -eq 0 ]; then
+    echo "FAIL: compilation was expected to fail"
+    exit 1
+  fi
+  sed -n 's/^;; error: *//p' "$file" | while IFS= read -r expected; do
+    if ! grep -qF -- "$expected" "$tmp/stderr"; then
+      echo "FAIL: expected error message containing: $expected"
+      exit 1
+    fi
+  done || exit 1
+  exit 0
+fi
+
+if [ $status -ne 0 ]; then
+  echo "FAIL: compilation failed"
+  exit 1
+fi
+
+if grep -q '^;; warning:' "$file"; then
+  sed -n 's/^;; warning: *//p' "$file" | while IFS= read -r expected; do
+    if ! grep -qF -- "$expected" "$tmp/stderr"; then
+      echo "FAIL: expected warning containing: $expected"
+      exit 1
+    fi
+  done || exit 1
+fi
+
+if grep -q '^;; =>' "$file"; then
+  sed -n 's/^;; => \{0,1\}//p' "$file" > "$tmp/expected"
+  (cd "$tmp/out" && "$NODE" --enable-source-maps "$js") > "$tmp/actual" 2>&1
+  if ! diff -u "$tmp/expected" "$tmp/actual"; then
+    echo "FAIL: unexpected output. Generated code:"
+    cat -n "$js"
+    exit 1
+  fi
+else
+  if ! "$NODE" --check "$js"; then
+    echo "FAIL: invalid JavaScript. Generated code:"
+    cat -n "$js"
+    exit 1
+  fi
+fi

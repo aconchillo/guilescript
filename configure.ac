@@ -19,7 +19,7 @@
 # along with GuileScript. If not, see https://www.gnu.org/licenses/.
 #
 
-AC_INIT([guilescript], [0.2.0], [aconchillo@gmail.com])
+AC_INIT([guilescript], [1.0.0], [aconchillo@gmail.com])
 AC_CONFIG_MACRO_DIRS([m4])
 AC_CONFIG_SRCDIR(language/guilescript)
 AC_CONFIG_AUX_DIR([build-aux])
@@ -51,6 +51,7 @@ AC_CONFIG_FILES([
    Makefile
    language/javascript/Makefile
    language/guilescript/Makefile
+   guilescript/Makefile
 ])
 AC_CONFIG_FILES([env], [chmod +x env])
 

@@ -25,13 +25,14 @@
 
 (define-module (language guilescript spec)
   #:use-module (language scheme compile-tree-il)
+  #:use-module (language guilescript modules)
   #:use-module (system base compile)
   #:use-module (system base language)
   #:export (guilescript))
 
 ;;;
-;;; Language definition. For now, this is currently exactly the same as the
-;;; Scheme language definition.
+;;; Language definition. Like the Scheme language definition, except that
+;;; define-module and use-modules forms are rewritten when they are read.
 ;;;
 
 (define-language guilescript
@@ -39,11 +40,14 @@
   #:reader      (lambda (port env)
                   ;; Use the binding of current-reader from the environment.
                   ;; FIXME: Handle `read-options' as well?
-                  ((or (and=> (and=> (module-variable env 'current-reader)
-                                     variable-ref)
-                              fluid-ref)
-                       read-syntax)
-                   port))
+                  ;; define-module and use-modules forms are rewritten (see
+                  ;; (language guilescript modules)).
+                  (transform-module-form
+                   ((or (and=> (and=> (module-variable env 'current-reader)
+                                      variable-ref)
+                               fluid-ref)
+                        read-syntax)
+                    port)))
   #:compilers   `((tree-il . ,compile-tree-il))
   #:evaluator	(lambda (x module) (primitive-eval x))
   #:printer	write
@@ -62,5 +66,12 @@
                     ;; compile-time warnings to be emitted when using
                     ;; unsupported options.
                     (module-set! m 'format simple-format)
+
+                    ;; GuileScript syntax (e.g. guard). It is defined in the
+                    ;; module itself (not imported) so it takes precedence
+                    ;; over Guile's equivalents (e.g. define-record-type from
+                    ;; (srfi srfi-9)), which can't be compiled.
+                    (module-for-each (lambda (name var) (module-add! m name var))
+                                     (resolve-interface '(language guilescript prelude)))
 
                     m)))
