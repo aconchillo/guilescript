@@ -35,6 +35,7 @@
 
 (define-module (language javascript names)
   #:use-module (ice-9 string-fun)
+  #:use-module (ice-9 threads)
   #:use-module (srfi srfi-1)
   #:export (scheme->js-name
             keyword->js-name
@@ -174,7 +175,21 @@
 ;; Convert a Scheme identifier (symbol or string) into a JavaScript
 ;; identifier. With #:property? #t the result is used as a property name, so
 ;; reserved words are left untouched.
+;;
+;; The compiler converts the same names many times, so the results are
+;; cached ((NAME . PROPERTY?) -> JavaScript name). The mutex is for programs
+;; compiling in several threads (e.g. a web server).
+(define js-names (make-hash-table))
+(define js-names-mutex (make-mutex))
+
 (define* (scheme->js-name name #:key (property? #f))
+  (let ((key (cons name property?)))
+    (or (with-mutex js-names-mutex (hash-ref js-names key))
+        (let ((js (convert-name name property?)))
+          (with-mutex js-names-mutex (hash-set! js-names key js))
+          js))))
+
+(define (convert-name name property?)
   (let ((s (if (symbol? name) (symbol->string name) name)))
     (if (type-name? s)
         (capitalize (scheme->js-name (substring s 1 (- (string-length s) 1))
